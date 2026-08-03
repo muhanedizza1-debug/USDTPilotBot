@@ -106,7 +106,7 @@ def get_main_reply_keyboard():
   btn_withdraw = KeyboardButton("💸 Withdraw")
   btn_history = KeyboardButton("📜 History")
   btn_referral = KeyboardButton("🎁 Referral")
-  btn_terms = KeyboardButton("📜 Terms")  # Badhanka oo la gaabiyay
+  btn_terms = KeyboardButton("📜 Terms")
   btn_support = KeyboardButton("🛠️ Support")
 
   markup.add(btn_profile, btn_deposit)
@@ -202,7 +202,7 @@ def add_request(user_id, req_type, amount, network):
   )
 
 
-def get_transaction_history(user_id, limit=20):
+def get_transaction_history(user_id, limit=10):
   conn = sqlite3.connect("bot.db")
   c = conn.cursor()
   c.execute(
@@ -237,7 +237,6 @@ def check_investments():
       conn = sqlite3.connect("bot.db")
       c = conn.cursor()
 
-      # 1. Hourly Profit Distribution (20% total per 24h = ~0.833% per hour)
       c.execute("SELECT id, user_id, amount FROM investments WHERE status='ACTIVE'")
       active_investments = c.fetchall()
 
@@ -246,7 +245,6 @@ def check_investments():
         hourly_profit = (amount * 0.20) / 24
         update_balance(user_id, hourly_profit)
 
-      # 2. Check if 24 hours completed to mark investment as COMPLETED
       c.execute("""
                 SELECT id, user_id, amount FROM investments 
                 WHERE status='ACTIVE' AND datetime(created_at, '+24 hours') <= datetime('now')
@@ -331,7 +329,37 @@ def send_profile_card(chat_id, user_id, name, send_welcome_photo=False):
   )
 
 
-# Text Handler-ka badhamada Reply Keyboard-ka hoose
+# Function-ka soo saaraya qoraalka History-ga si loo isticmaali karo Command iyo Callback-ba
+def generate_history_text(user_id):
+  history = get_transaction_history(user_id, 10)
+  if not history:
+    return (
+        "📜 **TRANSACTION HISTORY**\n\n❌ No transactions found yet.\nYour"
+        " deposits and withdrawals will appear here."
+    )
+
+  res_text = "📜 **TRANSACTION HISTORY** (Live Updates)\n\n"
+  for tx in history:
+    tx_type, amount, status, network, created_at = tx
+    # Calaamadaha xaaladaha kala duwan
+    if status == "APPROVED" or status == "SUCCESS":
+      status_emoji = "✅"
+      status_desc = "SUCCESSFUL"
+    elif status == "REJECTED":
+      status_emoji = "❌"
+      status_desc = "REJECTED"
+    else:
+      status_emoji = "⏳"
+      status_desc = "PENDING"
+
+    res_text += f"{status_emoji} **{tx_type}** | `{amount:.2f} USDT`\n"
+    res_text += f"   • Network: `{network}`\n"
+    res_text += f"   • Status: `{status_desc}`\n"
+    res_text += f"   • Date: `{created_at[:16]}`\n\n"
+
+  return res_text
+
+
 @bot.message_handler(
     func=lambda msg: msg.text
     in [
@@ -356,11 +384,10 @@ def handle_reply_menu(message):
   elif text == "💳 Deposit":
     markup = InlineKeyboardMarkup(row_width=2)
     amounts = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-    buttons = []
-    for amt in amounts:
-      buttons.append(
-          InlineKeyboardButton(f"💵 ${amt} USDT", callback_data=f"dep_amt_{amt}")
-      )
+    buttons = [
+        InlineKeyboardButton(f"💵 ${amt} USDT", callback_data=f"dep_amt_{amt}")
+        for amt in amounts
+    ]
     markup.add(*buttons)
 
     bot.send_message(
@@ -374,13 +401,12 @@ def handle_reply_menu(message):
   elif text == "💎 Investment":
     markup = InlineKeyboardMarkup(row_width=2)
     amounts = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-    buttons = []
-    for amt in amounts:
-      buttons.append(
-          InlineKeyboardButton(
-              f"💲 ${amt} (+20% in 24h)", callback_data=f"invest_{amt}"
-          )
-      )
+    buttons = [
+        InlineKeyboardButton(
+            f"💲 ${amt} (+20% in 24h)", callback_data=f"invest_{amt}"
+        )
+        for amt in amounts
+    ]
     markup.add(*buttons)
 
     bot.send_message(
@@ -392,7 +418,6 @@ def handle_reply_menu(message):
     )
 
   elif text == "💸 Withdraw":
-    # ── QAYBTA WITHDRAWAL-KA OO LA QURXIYAY (ENGLISH PROFESSIONAL) ──
     withdraw_info_text = f"""💸 **WITHDRAWAL CENTER**
 
 Securely payout your available funds directly to your wallet.
@@ -410,20 +435,17 @@ Need help? Contact our support team anytime."""
     bot.send_message(message.chat.id, withdraw_info_text, parse_mode="Markdown")
 
   elif text == "📜 History":
-    history = get_transaction_history(user_id, 10)
-    if not history:
-      res_text = "📜 No transactions yet"
-    else:
-      res_text = "📜 **Transaction History**\n\n"
-      for tx in history:
-        status_emoji = (
-            "✅" if tx[2] == "APPROVED" else "❌" if tx[2] == "REJECTED" else "⏳"
-        )
-        res_text += f"{status_emoji} **{tx[0]}**\n"
-        res_text += f"   Amount: ${tx[1]:.2f}\n"
-        res_text += f"   Status: {tx[2]}\n"
-        res_text += f"   Date: {tx[4][:16]}\n\n"
-    bot.send_message(message.chat.id, res_text, parse_mode="Markdown")
+    markup = InlineKeyboardMarkup()
+    markup.add(
+        InlineKeyboardButton("🔄 Refresh History", callback_data="refresh_history")
+    )
+    history_msg = generate_history_text(user_id)
+    bot.send_message(
+        message.chat.id,
+        history_msg,
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
 
   elif text == "🎁 Referral":
     bot_username = bot.get_me().username
@@ -492,7 +514,6 @@ def withdraw_command(message):
     )
     return
 
-  # Hubinta xeerka 7-da maalmood
   conn = sqlite3.connect("bot.db")
   c = conn.cursor()
   c.execute(
@@ -513,7 +534,6 @@ def withdraw_command(message):
       days_left = remaining.days
       hours_left = remaining.seconds // 3600
 
-      # ── Fariinta Locked-ka oo la qurxiyay ──
       lock_msg = f"""❌ **Withdrawal Temporarily Locked**
 
 🛡️ In accordance with our security guidelines and the 7-day policy, withdrawals are restricted until the lock period expires.
@@ -545,13 +565,31 @@ Your transaction is being processed. Funds will be transferred to your wallet sh
 user_deposit_amounts = {}
 
 
-# ========== CALLBACK HANDLERS (Deposit Networks & Investment) ==========
+# ========== CALLBACK HANDLERS (Deposit Networks, Investment & History Refresh) ==========
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
   user_id = call.from_user.id
   data = call.data
 
-  if data.startswith("dep_amt_"):
+  if data == "refresh_history":
+    markup = InlineKeyboardMarkup()
+    markup.add(
+        InlineKeyboardButton("🔄 Refresh History", callback_data="refresh_history")
+    )
+    updated_history = generate_history_text(user_id)
+    try:
+      bot.edit_message_text(
+          chat_id=call.message.chat.id,
+          message_id=call.message.message_id,
+          text=updated_history,
+          parse_mode="Markdown",
+          reply_markup=markup,
+      )
+      bot.answer_callback_query(call.id, "✅ History updated successfully!")
+    except Exception:
+      bot.answer_callback_query(call.id, "⚠️ History is already up to date.")
+
+  elif data.startswith("dep_amt_"):
     amount = data.replace("dep_amt_", "")
     user_deposit_amounts[user_id] = amount
 
@@ -690,13 +728,12 @@ Your balance will be updated automatically once the admin approves your transact
 @app.route("/")
 @app.route("/health")
 def health():
-  return "✅ USDTPilotBot is running 24/7 with Terms, Hourly Profits & 7-Day Lock!"
+  return "✅ USDTPilotBot is running 24/7 with Live History, Terms & Hourly Profits!"
 
 
 if __name__ == "__main__":
   print(
-      "🚀 USDTPilotBot is starting with Banner, Terms, Hourly Profits & 7-Day"
-      " Lock feature..."
+      "🚀 USDTPilotBot is starting with Live History Refresh, Banner & Terms..."
   )
 
   inv_thread = threading.Thread(target=check_investments, daemon=True)
