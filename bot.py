@@ -316,13 +316,11 @@ def check_investments():
         profit = amount * 0.20  # 20% Profit
         total_return = amount + profit
 
-        # Update investment status
         c.execute(
             "UPDATE investments SET status='COMPLETED' WHERE id=?", (inv_id,)
         )
         conn.commit()
 
-        # Update user balance automatically with capital + profit
         update_balance(user_id, total_return)
         add_notification(
             user_id,
@@ -408,16 +406,19 @@ def handle_reply_menu(message):
     send_profile_card(message.chat.id, user_id, name)
 
   elif text == "💳 Deposit":
-    markup = InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        InlineKeyboardButton("💵 TRC20 (USDT)", callback_data="deposit_trc20"),
-        InlineKeyboardButton("💵 BEP20 (USDT)", callback_data="deposit_bep20"),
-        InlineKeyboardButton("💵 ERC20 (USDT)", callback_data="deposit_erc20"),
-        InlineKeyboardButton("💵 TON (USDT)", callback_data="deposit_ton"),
-    )
+    markup = InlineKeyboardMarkup(row_width=2)
+    amounts = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    buttons = []
+    for amt in amounts:
+      buttons.append(
+          InlineKeyboardButton(f"💵 ${amt} USDT", callback_data=f"dep_amt_{amt}")
+      )
+    markup.add(*buttons)
+
     bot.send_message(
         message.chat.id,
-        "💳 **Deposit**\n\nSelect network to see deposit address:",
+        "💳 **Deposit Amount**\n\nPlease select the amount you want to"
+        " deposit:",
         parse_mode="Markdown",
         reply_markup=markup,
     )
@@ -516,7 +517,6 @@ def withdraw_command(message):
     )
     return
 
-  # Deduct balance immediately on withdraw request
   conn = sqlite3.connect("bot.db")
   c = conn.cursor()
   c.execute("UPDATE users SET balance = balance - ? WHERE id=?", (amount, user_id))
@@ -531,23 +531,8 @@ def withdraw_command(message):
   )
 
 
-@bot.message_handler(commands=["deposit_amount"])
-def deposit_amount(message):
-  user_id = message.from_user.id
-  try:
-    amount = float(message.text.split()[1])
-    if amount <= 0:
-      raise ValueError
-  except:
-    bot.reply_to(message, "❌ Use: /deposit_amount 100")
-    return
-
-  add_request(user_id, "DEPOSIT", amount, "TRC20")
-  bot.reply_to(
-      message,
-      f"✅ **Deposit request of {amount:.2f} USDT submitted!** Status: PENDING",
-      parse_mode="Markdown",
-  )
+# Temporary storage for selected deposit amounts
+user_deposit_amounts = {}
 
 
 # ========== CALLBACK HANDLERS (Deposit Networks & Investment) ==========
@@ -556,8 +541,42 @@ def handle_callback(call):
   user_id = call.from_user.id
   data = call.data
 
-  if data.startswith("deposit_"):
-    network = data.replace("deposit_", "").upper()
+  if data.startswith("dep_amt_"):
+    amount = data.replace("dep_amt_", "")
+    user_deposit_amounts[user_id] = amount
+
+    markup = InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        InlineKeyboardButton(
+            "💵 TRC20 (USDT)", callback_data=f"dep_net_TRC20_{amount}"
+        ),
+        InlineKeyboardButton(
+            "💵 BEP20 (USDT)", callback_data=f"dep_net_BEP20_{amount}"
+        ),
+        InlineKeyboardButton(
+            "💵 ERC20 (USDT)", callback_data=f"dep_net_ERC20_{amount}"
+        ),
+        InlineKeyboardButton(
+            "💵 TON (USDT)", callback_data=f"dep_net_TON_{amount}"
+        ),
+    )
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=(
+            f"💳 **Deposit Amount: ${amount} USDT**\n\nSelect network to see"
+            " deposit address:"
+        ),
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+    bot.answer_callback_query(call.id)
+
+  elif data.startswith("dep_net_"):
+    parts = data.split("_")
+    network = parts[2]
+    amount = parts[3]
+
     addresses = {
         "TRC20": "TLPVBmQnS6VTV7MwzLzYy7EjUKqsKob7hs",
         "BEP20": "0xe4484af8794b0fe2eccf433f7da7ac81935fc4a0",
@@ -566,22 +585,54 @@ def handle_callback(call):
     }
     address = addresses.get(network, "Address not found")
 
-    bot.send_message(
-        call.message.chat.id,
-        f"""💳 **Deposit via {network}**
+    markup = InlineKeyboardMarkup()
+    markup.add(
+        InlineKeyboardButton(
+            "✅ I Have Paid", callback_data=f"paid_{amount}_{network}"
+        )
+    )
+
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=f"""💳 **Deposit via {network} (${amount} USDT)**
 
 📌 **Send USDT to this address:**
 `{address}`
 
 ⚠️ **Important:**
 • Only send USDT on {network} network
-• Minimum: {get_setting('min_deposit')} USDT
+• Amount: {amount} USDT
 
-📝 After sending, use:
-`/deposit_amount 100`""",
+When you have paid, click I have paid""",
         parse_mode="Markdown",
+        reply_markup=markup,
     )
     bot.answer_callback_query(call.id)
+
+  elif data.startswith("paid_"):
+    parts = data.split("_")
+    amount = float(parts[1])
+    network = parts[2]
+
+    add_request(user_id, "DEPOSIT", amount, network)
+    bot.answer_callback_query(
+        call.id,
+        "✅ Payment notification sent to admin! Waiting for approval.",
+        show_alert=True,
+    )
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=f"""✅ **Deposit Request Submitted!**
+
+💰 Amount: `{amount} USDT`
+🌐 Network: `{network}`
+⏳ Status: `PENDING`
+
+Your balance will be updated automatically once the admin approves your transaction.""",
+        parse_mode="Markdown",
+    )
 
   elif data.startswith("invest_"):
     amount = float(data.replace("invest_", ""))
@@ -596,7 +647,6 @@ def handle_callback(call):
       )
       return
 
-    # Deduct balance and create investment
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
     c.execute(
@@ -631,13 +681,14 @@ def health():
 
 
 if __name__ == "__main__":
-  print("🚀 USDTPilotBot is starting with 20% / 24hrs Investment feature...")
+  print(
+      "🚀 USDTPilotBot is starting with professional Deposit list & 'I have"
+      " paid' feature..."
+  )
 
-  # Start Background Investment Worker Thread
   inv_thread = threading.Thread(target=check_investments, daemon=True)
   inv_thread.start()
 
-  # Start Telegram Bot Polling Thread
   bot_thread = threading.Thread(target=bot.infinity_polling, daemon=True)
   bot_thread.start()
 
