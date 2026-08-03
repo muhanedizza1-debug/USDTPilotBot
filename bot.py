@@ -423,6 +423,7 @@ def get_admin_stats():
         'total_rejected': get_transactions_by_status('REJECTED')
     }
 
+# ========== KEYBOARDS ==========
 def main_menu():
     from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
     markup = InlineKeyboardMarkup(row_width=2)
@@ -445,7 +446,8 @@ def deposit_networks():
     markup.add(
         InlineKeyboardButton("💵 TRC20 (USDT)", callback_data="deposit_trc20"),
         InlineKeyboardButton("💵 BEP20 (USDT)", callback_data="deposit_bep20"),
-        InlineKeyboardButton("💵 USDC (ERC20)", callback_data="deposit_usdc"),
+        InlineKeyboardButton("💵 ERC20 (USDT)", callback_data="deposit_erc20"),
+        InlineKeyboardButton("💵 TON (USDT)", callback_data="deposit_ton"),
         InlineKeyboardButton("🔙 Back", callback_data="back")
     )
     return markup
@@ -905,6 +907,7 @@ def handle_callback(call):
         bot.answer_callback_query(call.id, "🔧 Bot is under maintenance")
         return
     
+    # ===== USER FEATURES =====
     if data == "wallet":
         user = get_user(user_id)
         if user:
@@ -915,12 +918,14 @@ def handle_callback(call):
 💰 Balance: `{user[2]:.2f}` USDT
 🆔 User ID: `{user[0]}`
 
-📊 Networks: TRC20, BEP20, USDC
+📊 Networks: TRC20, BEP20, ERC20, TON
+
+🔙 Press back to return:
 """,
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 parse_mode='Markdown',
-                reply_markup=main_menu()
+                reply_markup=back_button()
             )
     
     elif data == "profile":
@@ -938,16 +943,18 @@ def handle_callback(call):
 👥 Referrals: {referrals}
 
 Status: 🟢 Active
+
+🔙 Press back to return:
 """,
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 parse_mode='Markdown',
-                reply_markup=main_menu()
+                reply_markup=back_button()
             )
     
     elif data == "deposit":
         bot.edit_message_text(
-            "💳 **Deposit**\n\nSelect network:",
+            "💳 **Deposit**\n\nSelect network to see deposit address:",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode='Markdown',
@@ -956,19 +963,65 @@ Status: 🟢 Active
     
     elif data.startswith("deposit_"):
         network = data.replace("deposit_", "").upper()
+        
+        addresses = {
+            "TRC20": "TLPVBmQnS6VTV7MwzLzYy7EjUKqsKob7hs",
+            "BEP20": "0xe4484af8794b0fe2eccf433f7da7ac81935fc4a0",
+            "ERC20": "0xe4484af8794b0fe2eccf433f7da7ac81935fc4a0",
+            "TON": "UQBGo3k-EhMubMv4h3RqHszdcJdqoxttvZnuwDvPHbk8jl6P"
+        }
+        
+        address = addresses.get(network, "Address not found")
+        
+        from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+        markup = InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            InlineKeyboardButton("📝 Submit Amount", callback_data="submit_deposit"),
+            InlineKeyboardButton("🔙 Back", callback_data="deposit")
+        )
+        
         bot.edit_message_text(
             f"""
 💳 **Deposit via {network}**
 
-Send amount:
+📌 **Send USDT to this address:**
+
+`{address}`
+
+⚠️ **Important:**
+• Only send USDT on {network} network
+• Minimum: {get_setting('min_deposit')} USDT
+• Maximum: {get_setting('max_deposit')} USDT
+
+📝 After sending, press "Submit Amount" or use:
+`/deposit_amount 100`
+
+⏳ Status will be PENDING until admin approves
+""",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=markup
+        )
+    
+    elif data == "submit_deposit":
+        bot.edit_message_text(
+            f"""
+📝 **Submit Deposit Amount**
+
+Send the amount you sent:
+
 `/deposit_amount 100`
 
 Min: {get_setting('min_deposit')} USDT
 Max: {get_setting('max_deposit')} USDT
+
+🔙 Press back to return:
 """,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
-            parse_mode='Markdown'
+            parse_mode='Markdown',
+            reply_markup=back_button()
         )
     
     elif data == "withdraw":
@@ -981,10 +1034,13 @@ Send amount:
 
 Min: {get_setting('min_withdraw')} USDT
 Max: {get_setting('max_withdraw')} USDT
+
+🔙 Press back to return:
 """,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
-            parse_mode='Markdown'
+            parse_mode='Markdown',
+            reply_markup=back_button()
         )
     
     elif data == "bonus":
@@ -1000,11 +1056,13 @@ Max: {get_setting('max_withdraw')} USDT
 💰 New Balance: `{user[2]:.2f}` USDT
 
 📌 Come back tomorrow for more!
+
+🔙 Press back to return:
 """,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode='Markdown',
-            reply_markup=main_menu()
+            reply_markup=back_button()
         )
     
     elif data == "referral":
@@ -1024,11 +1082,13 @@ Max: {get_setting('max_withdraw')} USDT
 👥 Total referrals: {referrals}
 
 Share your link and earn!
+
+🔙 Press back to return:
 """,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode='Markdown',
-            reply_markup=main_menu()
+            reply_markup=back_button()
         )
     
     elif data == "history":
@@ -1044,12 +1104,13 @@ Share your link and earn!
                 text += f"   Status: {tx[2]}\n"
                 text += f"   Date: {tx[4][:16]}\n\n"
         
+        text += "\n🔙 Press back to return:"
         bot.edit_message_text(
             text,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode='Markdown',
-            reply_markup=main_menu()
+            reply_markup=back_button()
         )
     
     elif data == "settings":
@@ -1064,11 +1125,13 @@ Share your link and earn!
 🛡️ Security: Basic
 
 ℹ️ USDTPilotBot Demo
+
+🔙 Press back to return:
 """,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode='Markdown',
-            reply_markup=main_menu()
+            reply_markup=back_button()
         )
     
     elif data == "notifications":
@@ -1084,23 +1147,25 @@ Share your link and earn!
                 text += f"{emoji} {n[1]}\n📅 {n[3][:16]}\n\n"
         
         mark_all_notifications_read(user_id)
+        text += "\n🔙 Press back to return:"
         bot.edit_message_text(
             text,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode='Markdown',
-            reply_markup=main_menu()
+            reply_markup=back_button()
         )
     
     elif data == "back":
         bot.edit_message_text(
-            "🏠 **Main Menu**",
+            "🏠 **Main Menu**\n\nChoose service below:",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode='Markdown',
             reply_markup=main_menu()
         )
     
+    # ===== ADMIN FEATURES =====
     elif data.startswith("admin_"):
         if user_id != ADMIN_ID or not is_admin_logged_in(user_id):
             bot.answer_callback_query(call.id, "❌ Unauthorized")
@@ -1275,6 +1340,7 @@ Commands: /daily, /weekly, /top
             bot.answer_callback_query(call.id, "🏆 Top users sent")
             bot.send_message(user_id, text, parse_mode='Markdown')
     
+    # ===== APPROVE/REJECT =====
     elif data.startswith("approve_") or data.startswith("reject_"):
         if user_id != ADMIN_ID or not is_admin_logged_in(user_id):
             bot.answer_callback_query(call.id, "❌ Unauthorized")
@@ -1316,6 +1382,15 @@ Commands: /daily, /weekly, /top
     
     else:
         bot.answer_callback_query(call.id, "Unknown action")
+
+# ========== BACK BUTTON ==========
+def back_button():
+    from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+    markup = InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back")
+    )
+    return markup
 
 # ========== ADMIN DASHBOARD ==========
 def show_admin_dashboard(message):
