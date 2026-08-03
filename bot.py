@@ -6,7 +6,12 @@ import threading
 import time
 from flask import Flask, jsonify, request
 import telebot
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+from telebot.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
 # ========== CONFIG ==========
 BOT_TOKEN = "8626470350:AAFxJ3S5FjEjgBK-ySNAaKAZHvuOGRhLQ3A"
@@ -40,6 +45,16 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )""")
 
+  c.execute("""CREATE TABLE IF NOT EXISTS investments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        amount REAL,
+        profit REAL,
+        status TEXT DEFAULT 'ACTIVE',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP
+    )""")
+
   c.execute("""CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT
@@ -62,7 +77,7 @@ def init_db():
       "max_withdraw": "10000",
       "referral_bonus": "0.5",
       "maintenance_mode": "false",
-      "welcome_message": "Welcome to USDTPilotBot! 🚀",
+      "welcome_message": "Welcome to USDTPilotBot! 🚀 Invest & earn 20% profit in 24 hours.",
       "currency": "USDT",
   }
 
@@ -84,14 +99,14 @@ def get_main_reply_keyboard():
   markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
   btn_profile = KeyboardButton("👤 My Profile")
   btn_deposit = KeyboardButton("💳 Deposit")
-  btn_mining = KeyboardButton("📈 Mining")
+  btn_investment = KeyboardButton("💎 Investment")
   btn_withdraw = KeyboardButton("💸 Withdraw")
   btn_history = KeyboardButton("📜 History")
   btn_referral = KeyboardButton("🎁 Referral")
   btn_support = KeyboardButton("🛠️ Support")
 
   markup.add(btn_profile, btn_deposit)
-  markup.add(btn_mining, btn_withdraw)
+  markup.add(btn_investment, btn_withdraw)
   markup.add(btn_history, btn_referral)
   markup.add(btn_support)
   return markup
@@ -143,49 +158,6 @@ def get_user(user_id):
   return data
 
 
-def get_all_users():
-  conn = sqlite3.connect("bot.db")
-  c = conn.cursor()
-  c.execute("SELECT id, username, balance FROM users ORDER BY balance DESC")
-  data = c.fetchall()
-  conn.close()
-  return data
-
-
-def get_top_users(limit=10):
-  conn = sqlite3.connect("bot.db")
-  c = conn.cursor()
-  c.execute(
-      "SELECT id, username, balance FROM users ORDER BY balance DESC LIMIT ?",
-      (limit,),
-  )
-  data = c.fetchall()
-  conn.close()
-  return data
-
-
-def search_user(query):
-  conn = sqlite3.connect("bot.db")
-  c = conn.cursor()
-  c.execute(
-      "SELECT id, username, balance FROM users WHERE id LIKE ? OR username"
-      " LIKE ?",
-      (f"%{query}%", f"%{query}%"),
-  )
-  data = c.fetchall()
-  conn.close()
-  return data
-
-
-def delete_user(user_id):
-  conn = sqlite3.connect("bot.db")
-  c = conn.cursor()
-  c.execute("DELETE FROM users WHERE id=?", (user_id,))
-  c.execute("DELETE FROM transactions WHERE user_id=?", (user_id,))
-  conn.commit()
-  conn.close()
-
-
 def update_balance(user_id, amount):
   conn = sqlite3.connect("bot.db")
   c = conn.cursor()
@@ -196,38 +168,14 @@ def update_balance(user_id, amount):
   conn.close()
 
 
-def get_total_balance():
+def get_active_deposit(user_id):
   conn = sqlite3.connect("bot.db")
   c = conn.cursor()
-  c.execute("SELECT SUM(balance) FROM users")
-  total = c.fetchone()[0] or 0
-  conn.close()
-  return total
-
-
-def get_total_users():
-  conn = sqlite3.connect("bot.db")
-  c = conn.cursor()
-  c.execute("SELECT COUNT(*) FROM users")
-  total = c.fetchone()[0]
-  conn.close()
-  return total
-
-
-def get_today_users():
-  conn = sqlite3.connect("bot.db")
-  c = conn.cursor()
-  c.execute("SELECT COUNT(*) FROM users WHERE DATE(registered_at) = DATE('now')")
-  total = c.fetchone()[0]
-  conn.close()
-  return total
-
-
-def get_referral_count(user_id):
-  conn = sqlite3.connect("bot.db")
-  c = conn.cursor()
-  c.execute("SELECT COUNT(*) FROM users WHERE referred_by=?", (user_id,))
-  total = c.fetchone()[0]
+  c.execute(
+      "SELECT SUM(amount) FROM investments WHERE user_id=? AND status='ACTIVE'",
+      (user_id,),
+  )
+  total = c.fetchone()[0] or 0.00
   conn.close()
   return total
 
@@ -253,7 +201,9 @@ def add_request(user_id, req_type, amount, network):
 def get_pending():
   conn = sqlite3.connect("bot.db")
   c = conn.cursor()
-  c.execute("SELECT * FROM transactions WHERE status='PENDING' ORDER BY created_at DESC")
+  c.execute(
+      "SELECT * FROM transactions WHERE status='PENDING' ORDER BY created_at DESC"
+  )
   return c.fetchall()
 
 
@@ -294,7 +244,9 @@ def update_transaction(tx_id, status):
             "SUCCESS",
         )
       elif tx[2] == "WITHDRAW":
-        add_notification(tx[0], f"✅ Withdraw of {tx[1]} USDT approved!", "SUCCESS")
+        add_notification(
+            tx[0], f"✅ Withdraw of {tx[1]} USDT approved!", "SUCCESS"
+        )
     conn.close()
   elif status == "REJECTED":
     conn = sqlite3.connect("bot.db")
@@ -325,39 +277,6 @@ def get_transaction_history(user_id, limit=20):
   return data
 
 
-def get_deposit_total():
-  conn = sqlite3.connect("bot.db")
-  c = conn.cursor()
-  c.execute(
-      "SELECT SUM(amount) FROM transactions WHERE type='DEPOSIT' AND"
-      " status='APPROVED'"
-  )
-  total = c.fetchone()[0] or 0
-  conn.close()
-  return total
-
-
-def get_withdraw_total():
-  conn = sqlite3.connect("bot.db")
-  c = conn.cursor()
-  c.execute(
-      "SELECT SUM(amount) FROM transactions WHERE type='WITHDRAW' AND"
-      " status='APPROVED'"
-  )
-  total = c.fetchone()[0] or 0
-  conn.close()
-  return total
-
-
-def get_transactions_by_status(status):
-  conn = sqlite3.connect("bot.db")
-  c = conn.cursor()
-  c.execute("SELECT COUNT(*) FROM transactions WHERE status=?", (status,))
-  total = c.fetchone()[0]
-  conn.close()
-  return total
-
-
 def add_notification(user_id, message, type="INFO"):
   conn = sqlite3.connect("bot.db")
   c = conn.cursor()
@@ -380,22 +299,42 @@ def admin_login(user_id):
   admin_sessions[user_id] = True
 
 
-def admin_logout(user_id):
-  if user_id in admin_sessions:
-    del admin_sessions[user_id]
+# ========== BACKGROUND INVESTMENT CHECKER (24 Hours Profit) ==========
+def check_investments():
+  while True:
+    try:
+      conn = sqlite3.connect("bot.db")
+      c = conn.cursor()
+      c.execute("""
+                SELECT id, user_id, amount FROM investments 
+                WHERE status='ACTIVE' AND datetime(created_at, '+24 hours') <= datetime('now')
+            """)
+      expired_investments = c.fetchall()
 
+      for inv in expired_investments:
+        inv_id, user_id, amount = inv
+        profit = amount * 0.20  # 20% Profit
+        total_return = amount + profit
 
-def get_admin_stats():
-  return {
-      "total_users": get_total_users(),
-      "today_users": get_today_users(),
-      "total_balance": get_total_balance(),
-      "total_deposits": int(get_deposit_total()),
-      "total_withdraws": int(get_withdraw_total()),
-      "total_pending": len(get_pending()),
-      "total_approved": get_transactions_by_status("APPROVED"),
-      "total_rejected": get_transactions_by_status("REJECTED"),
-  }
+        # Update investment status
+        c.execute(
+            "UPDATE investments SET status='COMPLETED' WHERE id=?", (inv_id,)
+        )
+        conn.commit()
+
+        # Update user balance automatically with capital + profit
+        update_balance(user_id, total_return)
+        add_notification(
+            user_id,
+            f"🎉 Investment completed! You received ${total_return:.2f}"
+            f" (${amount} principal + ${profit:.2f} profit 20%).",
+            "SUCCESS",
+        )
+
+      conn.close()
+    except Exception as e:
+      print(f"Error in background worker: {e}")
+    time.sleep(60)
 
 
 # ========== BOT COMMANDS & MESSAGE HANDLERS ==========
@@ -424,9 +363,9 @@ def start(message):
 def send_profile_card(chat_id, user_id, name):
   user = get_user(user_id)
   balance = user[2] if user else 0.00
-  active_deposit = 0.00
+  active_deposit = get_active_deposit(user_id)
   total_profit = 0.00
-  status = "No Deposit" if balance == 0 else "Active"
+  status = "No Deposit" if balance == 0 and active_deposit == 0 else "Active"
   current_time = datetime.now().strftime("%I:%M %p")
 
   text = f"""👤 **PROFILE**
@@ -453,7 +392,7 @@ def send_profile_card(chat_id, user_id, name):
     in [
         "👤 My Profile",
         "💳 Deposit",
-        "📈 Mining",
+        "💎 Investment",
         "💸 Withdraw",
         "📜 History",
         "🎁 Referral",
@@ -469,8 +408,6 @@ def handle_reply_menu(message):
     send_profile_card(message.chat.id, user_id, name)
 
   elif text == "💳 Deposit":
-    from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-
     markup = InlineKeyboardMarkup(row_width=1)
     markup.add(
         InlineKeyboardButton("💵 TRC20 (USDT)", callback_data="deposit_trc20"),
@@ -485,11 +422,24 @@ def handle_reply_menu(message):
         reply_markup=markup,
     )
 
-  elif text == "📈 Mining":
+  elif text == "💎 Investment":
+    markup = InlineKeyboardMarkup(row_width=2)
+    amounts = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    buttons = []
+    for amt in amounts:
+      buttons.append(
+          InlineKeyboardButton(
+              f"💲 ${amt} (+20% in 24h)", callback_data=f"invest_{amt}"
+          )
+      )
+    markup.add(*buttons)
+
     bot.send_message(
         message.chat.id,
-        "📈 **Mining**\n\nMining feature coming soon! Stay tuned.",
+        "💎 **Investment Plans (20% Profit in 24 Hours)**\n\nChoose an amount"
+        " to invest from your balance:",
         parse_mode="Markdown",
+        reply_markup=markup,
     )
 
   elif text == "💸 Withdraw":
@@ -524,7 +474,6 @@ Max: {get_setting('max_withdraw')} USDT""",
   elif text == "🎁 Referral":
     bot_username = bot.get_me().username
     link = f"https://t.me/{bot_username}?start={user_id}"
-    referrals = get_referral_count(user_id)
     bonus = get_setting("referral_bonus") or 0.5
     bot.send_message(
         message.chat.id,
@@ -535,8 +484,6 @@ Max: {get_setting('max_withdraw')} USDT""",
 
 🎁 Bonus: {bonus} USDT per referral
 
-👥 Total referrals: {referrals}
-
 Share your link and earn!""",
         parse_mode="Markdown",
     )
@@ -544,64 +491,18 @@ Share your link and earn!""",
   elif text == "🛠️ Support":
     bot.send_message(
         message.chat.id,
-        "🛠️ **Support**\n\nFor any issues or questions, contact admin: "
-        f"@{bot.get_me().username} or message @{ADMIN_ID}",
+        "🛠️ **Support**\n\nFor any issues or questions, contact admin.",
         parse_mode="Markdown",
     )
-
-
-@bot.message_handler(commands=["admin"])
-def admin_command(message):
-  user_id = message.from_user.id
-  if user_id != ADMIN_ID:
-    bot.reply_to(message, "❌ Unauthorized")
-    return
-
-  if is_admin_logged_in(user_id):
-    show_admin_dashboard(message)
-  else:
-    bot.reply_to(message, "🔐 Please login first:\n/adminpin 1234")
-
-
-@bot.message_handler(commands=["adminpin"])
-def admin_pin(message):
-  user_id = message.from_user.id
-  if user_id != ADMIN_ID:
-    bot.reply_to(message, "❌ Unauthorized")
-    return
-
-  args = message.text.split()
-  if len(args) < 2:
-    bot.reply_to(message, "🔐 Use: /adminpin 1234")
-    return
-
-  if args[1] == ADMIN_PIN:
-    admin_login(user_id)
-    bot.reply_to(message, "✅ Admin access granted!")
-    show_admin_dashboard(message)
-  else:
-    bot.reply_to(message, "❌ Wrong PIN!")
 
 
 @bot.message_handler(commands=["withdraw"])
 def withdraw_command(message):
   user_id = message.from_user.id
-  if get_setting("maintenance_mode") == "true":
-    bot.reply_to(message, "🔧 Bot is under maintenance.")
-    return
-
   try:
     amount = float(message.text.split()[1])
     if amount <= 0:
       raise ValueError
-    min_withdraw = float(get_setting("min_withdraw") or 10)
-    max_withdraw = float(get_setting("max_withdraw") or 10000)
-    if amount < min_withdraw:
-      bot.reply_to(message, f"❌ Minimum withdraw is {min_withdraw} USDT")
-      return
-    if amount > max_withdraw:
-      bot.reply_to(message, f"❌ Maximum withdraw is {max_withdraw} USDT")
-      return
   except:
     bot.reply_to(message, "❌ Use: /withdraw 50")
     return
@@ -615,15 +516,17 @@ def withdraw_command(message):
     )
     return
 
+  # Deduct balance immediately on withdraw request
+  conn = sqlite3.connect("bot.db")
+  c = conn.cursor()
+  c.execute("UPDATE users SET balance = balance - ? WHERE id=?", (amount, user_id))
+  conn.commit()
+  conn.close()
+
   add_request(user_id, "WITHDRAW", amount, "USDT")
   bot.reply_to(
       message,
-      f"""✅ **Withdraw request submitted!**
-
-📌 Amount: `{amount:.2f}` USDT
-⏳ Status: PENDING
-
-Admin will approve.""",
+      f"✅ **Withdraw request submitted!**\n\n📌 Amount: `{amount:.2f}` USDT",
       parse_mode="Markdown",
   )
 
@@ -647,7 +550,7 @@ def deposit_amount(message):
   )
 
 
-# ========== CALLBACK HANDLERS (Network Deposit & Admin) ==========
+# ========== CALLBACK HANDLERS (Deposit Networks & Investment) ==========
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
   user_id = call.from_user.id
@@ -680,19 +583,44 @@ def handle_callback(call):
     )
     bot.answer_callback_query(call.id)
 
+  elif data.startswith("invest_"):
+    amount = float(data.replace("invest_", ""))
+    user = get_user(user_id)
+    balance = user[2] if user else 0.00
 
-def show_admin_dashboard(message):
-  stats = get_admin_stats()
-  pending = get_pending_with_users()
-  text = f"""🔐 **Admin Dashboard**
+    if balance < amount:
+      bot.answer_callback_query(
+          call.id,
+          "❌ Insufficient balance! Please deposit first.",
+          show_alert=True,
+      )
+      return
 
-📊 **Statistics:**
-👥 Total Users: `{stats['total_users']}`
-🆕 Today: `{stats['today_users']}`
-💰 Total Balance: `${stats['total_balance']:.2f}`
+    # Deduct balance and create investment
+    conn = sqlite3.connect("bot.db")
+    c = conn.cursor()
+    c.execute(
+        "UPDATE users SET balance = balance - ? WHERE id=?", (amount, user_id)
+    )
+    c.execute(
+        "INSERT INTO investments (user_id, amount, profit, status) VALUES (?,"
+        " ?, ?, 'ACTIVE')",
+        (user_id, amount, amount * 0.20),
+    )
+    conn.commit()
+    conn.close()
 
-⏳ Pending Requests: {len(pending)}"""
-  bot.reply_to(message, text, parse_mode="Markdown")
+    bot.answer_callback_query(
+        call.id,
+        f"✅ Successfully invested ${amount}! You will get +20% in 24 hours.",
+        show_alert=True,
+    )
+    bot.send_message(
+        call.message.chat.id,
+        f"💎 **Investment Activated!**\n\nAmount: `${amount}`\nExpected Profit:"
+        f" `+${amount * 0.20:.2f}` (20%)\nDuration: `24 Hours`",
+        parse_mode="Markdown",
+    )
 
 
 # ========== FLASK HEALTH CHECK ==========
@@ -703,9 +631,15 @@ def health():
 
 
 if __name__ == "__main__":
-  print("🚀 USDTPilotBot is starting with the new interface...")
-  thread = threading.Thread(target=bot.infinity_polling, daemon=True)
-  thread.start()
+  print("🚀 USDTPilotBot is starting with 20% / 24hrs Investment feature...")
+
+  # Start Background Investment Worker Thread
+  inv_thread = threading.Thread(target=check_investments, daemon=True)
+  inv_thread.start()
+
+  # Start Telegram Bot Polling Thread
+  bot_thread = threading.Thread(target=bot.infinity_polling, daemon=True)
+  bot_thread.start()
 
   port = int(os.environ.get("PORT", 5000))
   app.run(host="0.0.0.0", port=port)
