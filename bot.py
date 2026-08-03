@@ -192,6 +192,7 @@ def add_request(user_id, req_type, amount, network):
       " (?, ?, ?, ?, ?)",
       (user_id, req_type, amount, "PENDING", network),
   )
+  tx_id = c.lastrowid
   conn.commit()
   conn.close()
   add_notification(
@@ -200,6 +201,7 @@ def add_request(user_id, req_type, amount, network):
       " approval.",
       "INFO",
   )
+  return tx_id
 
 
 def get_transaction_history(user_id, limit=10):
@@ -397,7 +399,6 @@ def handle_reply_menu(message):
     )
 
   elif text == "💎 Investment":
-    # ── QAYBTA INVESTMENT-KA OO LA HAGAajiyay (10$ - 100$) ──
     markup = InlineKeyboardMarkup(row_width=2)
     amounts = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     buttons = []
@@ -677,7 +678,57 @@ When you have paid, click I have paid""",
     amount = float(parts[1])
     network = parts[2]
 
-    add_request(user_id, "DEPOSIT", amount, network)
+    # Kaydi xogta transaction-ka oo hel ID-giisa
+    tx_id = add_request(user_id, "DEPOSIT", amount, network)
+
+    # Keen xogta User-ka si admin-ka loogu soo bandhigo
+    user_data = get_user(user_id)
+    username = (
+        f"@{call.from_user.username}" if call.from_user.username else "No Username"
+    )
+    name = call.from_user.first_name or "User"
+    bal = user_data[2] if user_data else 0.00
+
+    addresses = {
+        "TRC20": "TLPVBmQnS6VTV7MwzLzYy7EjUKqsKob7hs",
+        "BEP20": "0xe4484af8794b0fe2eccf433f7da7ac81935fc4a0",
+        "ERC20": "0xe4484af8794b0fe2eccf433f7da7ac81935fc4a0",
+        "TON": "UQBGo3k-EhMubMv4h3RqHszdcJdqoxttvZnuwDvPHbk8jl6P",
+    }
+    used_address = addresses.get(network, "Unknown Address")
+
+    # Fariinta loo dirayo Admin-ka oo wadata user profile iyo xogta lacagta
+    admin_msg = f"""🔔 **NEW DEPOSIT PENDING APPROVAL**
+
+👤 **USER PROFILE:**
+• **Name:** {name}
+• **Username:** {username}
+• **User ID:** `{user_id}`
+• **Current Balance:** `${bal:.2f} USDT`
+
+💳 **TRANSACTION DETAILS:**
+• **Deposit Amount:** `{amount} USDT`
+• **Network Used:** `{network}`
+• **Target Wallet Address:** 
+`{used_address}`
+• **Transaction ID:** `{tx_id}`"""
+
+    admin_markup = InlineKeyboardMarkup(row_width=2)
+    admin_markup.add(
+        InlineKeyboardButton(
+            "✅ Approve", callback_data=f"adm_app_{tx_id}_{user_id}_{amount}"
+        ),
+        InlineKeyboardButton("❌ Reject", callback_data=f"adm_rej_{tx_id}_{user_id}_{amount}"),
+    )
+
+    # U dir Admin-ka
+    try:
+      bot.send_message(
+          ADMIN_ID, admin_msg, parse_mode="Markdown", reply_markup=admin_markup
+      )
+    except Exception as e:
+      print(f"Error sending to admin: {e}")
+
     bot.answer_callback_query(
         call.id,
         "✅ Payment notification sent to admin! Waiting for approval.",
@@ -696,12 +747,113 @@ Your balance will be updated automatically once the admin approves your transact
         parse_mode="Markdown",
     )
 
+  # ---------- ADMIN ACTION HANDLERS (APPROVE / REJECT) ----------
+  elif data.startswith("adm_app_"):
+    if user_id != ADMIN_ID:
+      bot.answer_callback_query(call.id, "❌ Unauthorized action!", show_alert=True)
+      return
+
+    parts = data.split("_")
+    tx_id = parts[2]
+    target_user_id = int(parts[3])
+    amount = float(parts[4])
+
+    # Update transaction status in DB
+    conn = sqlite3.connect("bot.db")
+    c = conn.cursor()
+    c.execute(
+        "UPDATE transactions SET status='APPROVED' WHERE id=?", (tx_id,)
+    )
+    conn.commit()
+    conn.close()
+
+    # Update user balance
+    update_balance(target_user_id, amount)
+    add_notification(
+        target_user_id,
+        f"🎉 Your deposit of ${amount} USDT has been approved and added to"
+        " your balance!",
+        "SUCCESS",
+    )
+
+    # Edit admin message
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=call.message.text
+        + f"\n\n✅ **STATUS:** `APPROVED BY ADMIN`",
+        parse_mode="Markdown",
+    )
+    bot.answer_callback_query(call.id, "✅ Deposit Approved Successfully!")
+
+    # Professional English Success Message to User
+    user_success_msg = f"""🎉 **Deposit Approved Successfully!**
+
+Dear Investor,
+We are pleased to inform you that your deposit of **${amount:.2f} USDT** has been successfully verified and credited to your account balance. 
+
+📈 You can now proceed to invest your funds and start earning automated hourly profits! Thank you for choosing USDTPilotBot."""
+    try:
+      bot.send_message(target_user_id, user_success_msg, parse_mode="Markdown")
+    except Exception as e:
+      print(f"Error notifying user: {e}")
+
+  elif data.startswith("adm_rej_"):
+    if user_id != ADMIN_ID:
+      bot.answer_callback_query(call.id, "❌ Unauthorized action!", show_alert=True)
+      return
+
+    parts = data.split("_")
+    tx_id = parts[2]
+    target_user_id = int(parts[3])
+    amount = float(parts[4])
+
+    # Update transaction status in DB
+    conn = sqlite3.connect("bot.db")
+    c = conn.cursor()
+    c.execute(
+        "UPDATE transactions SET status='REJECTED' WHERE id=?", (tx_id,)
+    )
+    conn.commit()
+    conn.close()
+
+    add_notification(
+        target_user_id,
+        f"❌ Your deposit of ${amount} USDT was rejected by admin.",
+        "ERROR",
+    )
+
+    # Edit admin message
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=call.message.text + f"\n\n❌ **STATUS:** `REJECTED BY ADMIN`",
+        parse_mode="Markdown",
+    )
+    bot.answer_callback_query(call.id, "❌ Deposit Rejected.")
+
+    # Professional English Rejection Message to User
+    user_reject_msg = f"""❌ **Deposit Request Declined**
+
+Dear Valued User,
+We regret to inform you that your deposit request for **${amount:.2f} USDT** could not be verified or approved at this time. 
+
+📌 **Possible Reasons:**
+• Incorrect transaction hash or network.
+• The exact transferred amount did not match.
+• Payment was not received on our network address.
+
+If you believe this is an error or have completed the payment correctly, please contact our support team with your transaction proof."""
+    try:
+      bot.send_message(target_user_id, user_reject_msg, parse_mode="Markdown")
+    except Exception as e:
+      print(f"Error notifying user: {e}")
+
   elif data.startswith("invest_"):
     amount = float(data.replace("invest_", ""))
     user = get_user(user_id)
     balance = user[2] if user else 0.00
 
-    # Hubinta haddii uu haysato lacag ku filan si toos ah loogu iibsado
     if balance < amount:
       bot.answer_callback_query(
           call.id,
@@ -710,7 +862,6 @@ Your balance will be updated automatically once the admin approves your transact
       )
       return
 
-    # Si toos ah (Automatically) uga jar balankiisa kana diiwaangeli Investment-ka
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
     c.execute(
