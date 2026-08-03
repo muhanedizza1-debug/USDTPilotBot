@@ -428,15 +428,11 @@ def main_menu():
     from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
     markup = InlineKeyboardMarkup(row_width=2)
     markup.add(
-        InlineKeyboardButton("👛 Wallet", callback_data="wallet"),
-        InlineKeyboardButton("👤 Profile", callback_data="profile"),
+        InlineKeyboardButton("👤 My Profile", callback_data="profile"),
         InlineKeyboardButton("💳 Deposit", callback_data="deposit"),
         InlineKeyboardButton("💸 Withdraw", callback_data="withdraw"),
-        InlineKeyboardButton("🎁 Bonus", callback_data="bonus"),
-        InlineKeyboardButton("👥 Referral", callback_data="referral"),
         InlineKeyboardButton("📜 History", callback_data="history"),
-        InlineKeyboardButton("⚙️ Settings", callback_data="settings"),
-        InlineKeyboardButton("🔔 Notifications", callback_data="notifications")
+        InlineKeyboardButton("👥 Referral", callback_data="referral")
     )
     return markup
 
@@ -479,7 +475,6 @@ def profile_menu():
     markup.add(
         InlineKeyboardButton("👤 My Profile", callback_data="profile"),
         InlineKeyboardButton("💳 Deposit", callback_data="deposit"),
-        InlineKeyboardButton("⛏️ Mining", callback_data="mining"),
         InlineKeyboardButton("💸 Withdraw", callback_data="withdraw"),
         InlineKeyboardButton("📜 History", callback_data="history"),
         InlineKeyboardButton("👥 Referral", callback_data="referral")
@@ -507,19 +502,26 @@ def start(message):
     
     add_user(user_id, username, referred_by)
     
-    welcome = get_setting('welcome_message') or "Welcome to USDTPilotBot! 🚀"
     bot.reply_to(
         message,
         f"""
-🤖 **USDTPilotBot**
+👤 **PROFILE**
 
-{welcome}
+🆔 ID: `{user_id}`
+👤 Name: @{username}
+💰 Balance: $0.00
+📊 Active Deposit: $0.00
+📈 Total Profit: $0.00
+📌 Status: No Deposit
+🔒 Withdrawal Lock: Unlocked
 
-💰 Balance: 0.00 USDT
+{datetime.now().strftime('%I:%M %p')}
 
-Choose service below:
+━━━━━━━━━━━━━━━━━━━
+
+📱 **Menu**
 """,
-        reply_markup=main_menu(),
+        reply_markup=profile_menu(),
         parse_mode='Markdown'
     )
 
@@ -687,7 +689,7 @@ def top_command(message):
     medals = ["🥇", "🥈", "🥉"]
     for i, u in enumerate(top, 1):
         medal = medals[i-1] if i <= 3 else f"{i}."
-        text += f"{medal} @{u[1] or u[0]} - {u[2]:.2f} USDT\n"
+        text += f"{medal} @{u[1] or u[0]} - ${u[2]:.2f}\n"
     
     bot.reply_to(message, text, parse_mode='Markdown')
 
@@ -710,7 +712,7 @@ def search_command(message):
     
     text = f"🔍 **Search Results:** {len(results)} found\n\n"
     for u in results[:10]:
-        text += f"🆔 `{u[0]}` | @{u[1] or 'No username'} | {u[2]:.2f} USDT\n"
+        text += f"🆔 `{u[0]}` | @{u[1] or 'No username'} | ${u[2]:.2f}\n"
     
     bot.reply_to(message, text, parse_mode='Markdown')
 
@@ -747,8 +749,8 @@ def daily_report_command(message):
 📅 {datetime.now().strftime('%Y-%m-%d')}
 
 👥 New Users: {stats['new_users']}
-💰 Total Deposits: {stats['total_deposits']:.2f} USDT
-💸 Total Withdraws: {stats['total_withdraws']:.2f} USDT
+💰 Total Deposits: ${stats['total_deposits']:.2f}
+💸 Total Withdraws: ${stats['total_withdraws']:.2f}
 ⏳ Pending: {stats['pending']}
 ✅ Approved: {stats['approved']}
 ❌ Rejected: {stats['rejected']}
@@ -770,8 +772,8 @@ def weekly_report_command(message):
 📅 {start.strftime('%Y-%m-%d')} - {end.strftime('%Y-%m-%d')}
 
 👥 New Users: {stats['new_users']}
-💰 Total Deposits: {stats['total_deposits']:.2f} USDT
-💸 Total Withdraws: {stats['total_withdraws']:.2f} USDT
+💰 Total Deposits: ${stats['total_deposits']:.2f}
+💸 Total Withdraws: ${stats['total_withdraws']:.2f}
 ⏳ Pending: {stats['pending']}
 ✅ Approved: {stats['approved']}
 ❌ Rejected: {stats['rejected']}
@@ -864,7 +866,7 @@ def info_command(message):
 
 📊 **Statistics:**
 👥 Users: `{stats['total_users']}`
-💰 Balance: `{stats['total_balance']:.2f}` USDT
+💰 Balance: `${stats['total_balance']:.2f}`
 
 📈 **Transactions:**
 📥 Deposits: `{stats['total_deposits']}`
@@ -887,15 +889,11 @@ def help_command(message):
 
 **User Commands:**
 /start - Main menu
-/wallet - Check wallet
 /profile - Your profile
 /deposit - Make deposit
 /withdraw - Make withdraw
-/bonus - Daily bonus
-/referral - Referral system
 /history - Transaction history
-/settings - Settings
-/notifications - Your notifications
+/referral - Referral system
 /help - This message
 /info - Bot info
 
@@ -928,27 +926,8 @@ def handle_callback(call):
         bot.answer_callback_query(call.id, "🔧 Bot is under maintenance")
         return
     
-    # ===== WALLET =====
-    if data == "wallet":
-        user = get_user(user_id)
-        if user:
-            bot.edit_message_text(
-                f"""
-👛 **Your Wallet**
-
-💰 Balance: `${user[2]:.2f}` USDT
-🆔 User ID: `{user[0]}`
-
-📊 Networks: TRC20, BEP20, ERC20, TON
-""",
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                parse_mode='Markdown',
-                reply_markup=back_button()
-            )
-    
-    # ===== PROFILE - Sida sawirkaaga =====
-    elif data == "profile":
+    # ===== PROFILE =====
+    if data == "profile":
         user = get_user(user_id)
         if user:
             active_deposit = 0.00
@@ -967,6 +946,8 @@ def handle_callback(call):
 📈 Total Profit: ${total_profit:.2f}
 📌 Status: {status}
 🔒 Withdrawal Lock: {withdrawal_lock}
+
+{datetime.now().strftime('%I:%M %p')}
 
 ━━━━━━━━━━━━━━━━━━━
 
@@ -1069,21 +1050,22 @@ Max: {get_setting('max_withdraw')} USDT
             reply_markup=back_button()
         )
     
-    # ===== BONUS =====
-    elif data == "bonus":
-        bonus_amount = float(get_setting('bonus_amount') or 1.0)
-        update_balance(user_id, bonus_amount)
-        user = get_user(user_id)
+    # ===== HISTORY =====
+    elif data == "history":
+        history = get_transaction_history(user_id, 10)
+        if not history:
+            text = "📜 No transactions yet"
+        else:
+            text = "📜 **Transaction History**\n\n"
+            for tx in history:
+                status_emoji = "✅" if tx[2] == "APPROVED" else "❌" if tx[2] == "REJECTED" else "⏳"
+                text += f"{status_emoji} **{tx[0]}**\n"
+                text += f"   Amount: ${tx[1]:.2f}\n"
+                text += f"   Status: {tx[2]}\n"
+                text += f"   Date: {tx[4][:16]}\n\n"
+        
         bot.edit_message_text(
-            f"""
-🎁 **Daily Bonus**
-
-✅ Received: `${bonus_amount:.2f}` USDT
-
-💰 New Balance: `${user[2]:.2f}` USDT
-
-📌 Come back tomorrow for more!
-""",
+            text,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode='Markdown',
@@ -1115,103 +1097,14 @@ Share your link and earn!
             reply_markup=back_button()
         )
     
-    # ===== HISTORY =====
-    elif data == "history":
-        history = get_transaction_history(user_id, 10)
-        if not history:
-            text = "📜 No transactions yet"
-        else:
-            text = "📜 **Transaction History**\n\n"
-            for tx in history:
-                status_emoji = "✅" if tx[2] == "APPROVED" else "❌" if tx[2] == "REJECTED" else "⏳"
-                text += f"{status_emoji} **{tx[0]}**\n"
-                text += f"   Amount: ${tx[1]:.2f}\n"
-                text += f"   Status: {tx[2]}\n"
-                text += f"   Date: {tx[4][:16]}\n\n"
-        
-        bot.edit_message_text(
-            text,
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode='Markdown',
-            reply_markup=back_button()
-        )
-    
-    # ===== SETTINGS =====
-    elif data == "settings":
-        bot.edit_message_text(
-            """
-⚙️ **Settings**
-
-🔔 Notifications: ✅ ON
-🌐 Language: English
-📱 Platform: Telegram
-
-🛡️ Security: Basic
-
-ℹ️ USDTPilotBot Demo
-""",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode='Markdown',
-            reply_markup=back_button()
-        )
-    
-    # ===== NOTIFICATIONS =====
-    elif data == "notifications":
-        notifs = get_notifications(user_id)
-        count = get_unread_count(user_id)
-        
-        if not notifs:
-            text = "🔔 No new notifications"
-        else:
-            text = f"🔔 **Notifications** ({count} unread)\n\n"
-            for n in notifs[:10]:
-                emoji = "ℹ️" if n[2] == "INFO" else "⚠️" if n[2] == "WARNING" else "✅" if n[2] == "SUCCESS" else "📢"
-                text += f"{emoji} {n[1]}\n📅 {n[3][:16]}\n\n"
-        
-        mark_all_notifications_read(user_id)
-        bot.edit_message_text(
-            text,
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode='Markdown',
-            reply_markup=back_button()
-        )
-    
-    # ===== MINING =====
-    elif data == "mining":
-        user = get_user(user_id)
-        mining_rate = 0.5
-        daily_earning = mining_rate * 24
-        
-        bot.edit_message_text(
-            f"""
-⛏️ **Mining Dashboard**
-
-💰 Current Balance: ${user[2]:.2f}
-⚡ Mining Rate: {mining_rate} USDT/hour
-📊 Daily Earning: {daily_earning:.2f} USDT
-📌 Total Mined: ${user[2]:.2f}
-
-📌 Status: Active
-
-Start mining by making a deposit!
-""",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode='Markdown',
-            reply_markup=back_button()
-        )
-    
     # ===== BACK =====
     elif data == "back":
         bot.edit_message_text(
-            "🏠 **Main Menu**\n\nChoose service below:",
+            "👤 **PROFILE**\n\n{datetime.now().strftime('%I:%M %p')}\n\n━━━━━━━━━━━━━━━━━━━\n\n📱 **Menu**",
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             parse_mode='Markdown',
-            reply_markup=main_menu()
+            reply_markup=profile_menu()
         )
     
     # ===== ADMIN FEATURES =====
