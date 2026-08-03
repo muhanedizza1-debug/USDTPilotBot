@@ -106,7 +106,7 @@ def get_main_reply_keyboard():
   btn_withdraw = KeyboardButton("💸 Withdraw")
   btn_history = KeyboardButton("📜 History")
   btn_referral = KeyboardButton("🎁 Referral")
-  btn_terms = KeyboardButton("📜 Terms & Conditions")
+  btn_terms = KeyboardButton("📜 Terms")  # Badhanka oo la gaabiyay
   btn_support = KeyboardButton("🛠️ Support")
 
   markup.add(btn_profile, btn_deposit)
@@ -243,8 +243,7 @@ def check_investments():
 
       for inv in active_investments:
         inv_id, user_id, amount = inv
-        hourly_profit = (amount * 0.20) / 24  # Qaybta saacadda ku soo aadaysa
-        # Ku dar balance-ka saacad walba si qofku u arko
+        hourly_profit = (amount * 0.20) / 24
         update_balance(user_id, hourly_profit)
 
       # 2. Check if 24 hours completed to mark investment as COMPLETED
@@ -270,7 +269,7 @@ def check_investments():
       conn.close()
     except Exception as e:
       print(f"Error in background worker: {e}")
-    time.sleep(3600)  # Waxay shaqaynaysaa saacad walba (3600 ilbiriqsi)
+    time.sleep(3600)
 
 
 # ========== BOT COMMANDS & MESSAGE HANDLERS ==========
@@ -296,13 +295,10 @@ def start(message):
   send_profile_card(message.chat.id, user_id, username, send_welcome_photo=True)
 
 
-def send_profile_card(
-    chat_id, user_id, name, send_welcome_photo=False
-):
+def send_profile_card(chat_id, user_id, name, send_welcome_photo=False):
   user = get_user(user_id)
   balance = user[2] if user else 0.00
   active_deposit = get_active_deposit(user_id)
-  total_profit = 0.00
   status = "No Deposit" if balance == 0 and active_deposit == 0 else "Active"
   current_time = datetime.now().strftime("%I:%M %p")
 
@@ -345,7 +341,7 @@ def send_profile_card(
         "💸 Withdraw",
         "📜 History",
         "🎁 Referral",
-        "📜 Terms & Conditions",
+        "📜 Terms",
         "🛠️ Support",
     ]
 )
@@ -396,18 +392,22 @@ def handle_reply_menu(message):
     )
 
   elif text == "💸 Withdraw":
-    bot.send_message(
-        message.chat.id,
-        f"""💸 **Withdraw**
+    # ── QAYBTA WITHDRAWAL-KA OO LA QURXIYAY (ENGLISH PROFESSIONAL) ──
+    withdraw_info_text = f"""💸 **WITHDRAWAL CENTER**
 
-Send amount using command:
-`/withdraw 50`
+Securely payout your available funds directly to your wallet.
 
-⚠️ **Rule:** Withdrawal is allowed only after **7 days** from your deposit/investment time.
-Min: {get_setting('min_withdraw')} USDT
-Max: {get_setting('max_withdraw')} USDT""",
-        parse_mode="Markdown",
-    )
+📌 **How to Withdraw:**
+Type and send the command followed by your amount. 
+*Example:* `/withdraw 50`
+
+⚠️ **Important Policy & Limits:**
+• **Lock Period:** Withdrawals are securely locked for **7 days** from your last approved deposit/investment time.
+• **Minimum Limit:** `{get_setting('min_withdraw')} USDT`
+• **Maximum Limit:** `{get_setting('max_withdraw')} USDT`
+
+Need help? Contact our support team anytime."""
+    bot.send_message(message.chat.id, withdraw_info_text, parse_mode="Markdown")
 
   elif text == "📜 History":
     history = get_transaction_history(user_id, 10)
@@ -442,7 +442,7 @@ Share your link and earn!""",
         parse_mode="Markdown",
     )
 
-  elif text == "📜 Terms & Conditions":
+  elif text == "📜 Terms":
     terms_text = """📜 **Terms & Conditions / Privacy Policy**
 
 1. **Investment & Profits:**
@@ -474,19 +474,25 @@ def withdraw_command(message):
     if amount <= 0:
       raise ValueError
   except:
-    bot.reply_to(message, "❌ Use: /withdraw 50")
+    bot.reply_to(
+        message,
+        "❌ **Invalid Format!**\nPlease use the correct command structure:\n👉"
+        " `/withdraw 50`",
+        parse_mode="Markdown",
+    )
     return
 
   user = get_user(user_id)
   if not user or (user[2] or 0) < amount:
     bot.reply_to(
         message,
-        f"❌ Insufficient balance. Balance: `{user[2]:.2f}` USDT",
+        f"❌ **Insufficient Balance!**\nYou requested `{amount:.2f} USDT`, but"
+        f" your current balance is `{user[2]:.2f} USDT`.",
         parse_mode="Markdown",
     )
     return
 
-  # Hubinta xeerka 7-da maalmood ee transactions-ka ama investments-ka
+  # Hubinta xeerka 7-da maalmood
   conn = sqlite3.connect("bot.db")
   c = conn.cursor()
   c.execute(
@@ -506,13 +512,17 @@ def withdraw_command(message):
       remaining = (deposit_time + timedelta(days=7)) - datetime.now()
       days_left = remaining.days
       hours_left = remaining.seconds // 3600
-      bot.reply_to(
-          message,
-          f"❌ **Withdrawal Locked!**\n\nPer our 7-day policy, you can withdraw"
-          f" your deposit and profits after 7 days from your deposit time.\n⏳"
-          f" Time remaining: `{days_left} days and {hours_left} hours`.",
-          parse_mode="Markdown",
-      )
+
+      # ── Fariinta Locked-ka oo la qurxiyay ──
+      lock_msg = f"""❌ **Withdrawal Temporarily Locked**
+
+🛡️ In accordance with our security guidelines and the 7-day policy, withdrawals are restricted until the lock period expires.
+
+⏳ **Time Remaining:** 
+• `{days_left} Days and {hours_left} Hours`
+
+Thank you for your patience and cooperation."""
+      bot.reply_to(message, lock_msg, parse_mode="Markdown")
       return
 
   conn = sqlite3.connect("bot.db")
@@ -522,11 +532,14 @@ def withdraw_command(message):
   conn.close()
 
   add_request(user_id, "WITHDRAW", amount, "USDT")
-  bot.reply_to(
-      message,
-      f"✅ **Withdraw request submitted!**\n\n📌 Amount: `{amount:.2f}` USDT",
-      parse_mode="Markdown",
-  )
+
+  success_msg = f"""✅ **Withdrawal Request Submitted Successfully!**
+
+📌 **Amount:** `{amount:.2f} USDT`
+🔄 **Status:** `Pending Admin Review`
+
+Your transaction is being processed. Funds will be transferred to your wallet shortly."""
+  bot.reply_to(message, success_msg, parse_mode="Markdown")
 
 
 user_deposit_amounts = {}
