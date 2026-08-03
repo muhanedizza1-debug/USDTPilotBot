@@ -18,7 +18,6 @@ BOT_TOKEN = "8626470350:AAFxJ3S5FjEjgBK-ySNAaKAZHvuOGRhLQ3A"
 ADMIN_ID = 7076265514
 ADMIN_PIN = "1234"
 
-# Sawirka quruxda badan ee ku soobaxaya Welcome message-ka
 WELCOME_BANNER = "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?w=800&auto=format&fit=crop&q=60"
 
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -97,7 +96,7 @@ def init_db():
 init_db()
 
 
-# ========== REPLY KEYBOARD (Menu-ga hoose) ==========
+# ========== REPLY KEYBOARD ==========
 def get_main_reply_keyboard():
   markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
   btn_profile = KeyboardButton("👤 My Profile")
@@ -232,7 +231,7 @@ def add_notification(user_id, message, type="INFO"):
   conn.close()
 
 
-# ========== BACKGROUND WORKER: HOURLY PROFIT & 24H INVESTMENT CHECKER ==========
+# ========== BACKGROUND WORKER ==========
 def check_investments():
   while True:
     try:
@@ -272,7 +271,7 @@ def check_investments():
     time.sleep(3600)
 
 
-# ========== BOT COMMANDS & MESSAGE HANDLERS ==========
+# ========== BOT COMMANDS & HANDLERS ==========
 @bot.message_handler(commands=["start"])
 def start(message):
   user_id = message.from_user.id
@@ -306,8 +305,8 @@ def send_profile_card(chat_id, user_id, name, send_welcome_photo=False):
 
 🆔 ID: `{user_id}`
 👤 Name: {name}
-💰 Balance: ${balance:.2f}
-📊 Active Deposit: ${active_deposit:.2f}
+💰 Balance: `${balance:.2f} USDT`
+📊 Active Deposit: `${active_deposit:.2f} USDT`
 📈 Hourly Profit: Active (Updates Every Hour) ⏳
 ⏳ Status: {status}
 🔓 Withdrawal Lock: 7 Days Policy Enforced 🛡️ ({current_time})"""
@@ -678,10 +677,8 @@ When you have paid, click I have paid""",
     amount = float(parts[1])
     network = parts[2]
 
-    # Kaydi xogta transaction-ka oo hel ID-giisa
     tx_id = add_request(user_id, "DEPOSIT", amount, network)
 
-    # Keen xogta User-ka si admin-ka loogu soo bandhigo
     user_data = get_user(user_id)
     username = (
         f"@{call.from_user.username}" if call.from_user.username else "No Username"
@@ -697,7 +694,6 @@ When you have paid, click I have paid""",
     }
     used_address = addresses.get(network, "Unknown Address")
 
-    # Fariinta loo dirayo Admin-ka oo wadata user profile iyo xogta lacagta
     admin_msg = f"""🔔 **NEW DEPOSIT PENDING APPROVAL**
 
 👤 **USER PROFILE:**
@@ -718,10 +714,11 @@ When you have paid, click I have paid""",
         InlineKeyboardButton(
             "✅ Approve", callback_data=f"adm_app_{tx_id}_{user_id}_{amount}"
         ),
-        InlineKeyboardButton("❌ Reject", callback_data=f"adm_rej_{tx_id}_{user_id}_{amount}"),
+        InlineKeyboardButton(
+            "❌ Reject", callback_data=f"adm_rej_{tx_id}_{user_id}_{amount}"
+        ),
     )
 
-    # U dir Admin-ka
     try:
       bot.send_message(
           ADMIN_ID, admin_msg, parse_mode="Markdown", reply_markup=admin_markup
@@ -747,7 +744,7 @@ Your balance will be updated automatically once the admin approves your transact
         parse_mode="Markdown",
     )
 
-  # ---------- ADMIN ACTION HANDLERS (APPROVE / REJECT) ----------
+  # ========== ADMIN ACTION HANDLERS (APPROVE / REJECT) ==========
   elif data.startswith("adm_app_"):
     if user_id != ADMIN_ID:
       bot.answer_callback_query(call.id, "❌ Unauthorized action!", show_alert=True)
@@ -758,7 +755,6 @@ Your balance will be updated automatically once the admin approves your transact
     target_user_id = int(parts[3])
     amount = float(parts[4])
 
-    # Update transaction status in DB
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
     c.execute(
@@ -767,7 +763,6 @@ Your balance will be updated automatically once the admin approves your transact
     conn.commit()
     conn.close()
 
-    # Update user balance
     update_balance(target_user_id, amount)
     add_notification(
         target_user_id,
@@ -776,17 +771,14 @@ Your balance will be updated automatically once the admin approves your transact
         "SUCCESS",
     )
 
-    # Edit admin message
     bot.edit_message_text(
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
-        text=call.message.text
-        + f"\n\n✅ **STATUS:** `APPROVED BY ADMIN`",
+        text=call.message.text + f"\n\n✅ **STATUS:** `APPROVED BY ADMIN`",
         parse_mode="Markdown",
     )
     bot.answer_callback_query(call.id, "✅ Deposit Approved Successfully!")
 
-    # Professional English Success Message to User
     user_success_msg = f"""🎉 **Deposit Approved Successfully!**
 
 Dear Investor,
@@ -808,7 +800,6 @@ We are pleased to inform you that your deposit of **${amount:.2f} USDT** has bee
     target_user_id = int(parts[3])
     amount = float(parts[4])
 
-    # Update transaction status in DB
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
     c.execute(
@@ -823,7 +814,6 @@ We are pleased to inform you that your deposit of **${amount:.2f} USDT** has bee
         "ERROR",
     )
 
-    # Edit admin message
     bot.edit_message_text(
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
@@ -832,7 +822,6 @@ We are pleased to inform you that your deposit of **${amount:.2f} USDT** has bee
     )
     bot.answer_callback_query(call.id, "❌ Deposit Rejected.")
 
-    # Professional English Rejection Message to User
     user_reject_msg = f"""❌ **Deposit Request Declined**
 
 Dear Valued User,
