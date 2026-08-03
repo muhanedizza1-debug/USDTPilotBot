@@ -299,7 +299,6 @@ def send_profile_card(chat_id, user_id, name, send_welcome_photo=False):
   balance = user[2] if user else 0.00
   active_deposit = get_active_deposit(user_id)
   
-  # Status-ka hadda waa mid si sax ah u eegaya haddii balance ama active deposit uu jiro
   if balance > 0 or active_deposit > 0:
     status = "Active 🟢"
   else:
@@ -500,10 +499,18 @@ By using USDTPilotBot, you agree to abide by these rules and conditions."""
     bot.send_message(message.chat.id, terms_text, parse_mode="Markdown")
 
   elif text == "🛠️ Support":
+    markup = InlineKeyboardMarkup()
+    markup.add(
+        InlineKeyboardButton("💬 Request Live Support", callback_data="request_support")
+    )
+    support_intro = """🛠️ **SUPPORT CENTER**
+
+Need help or have questions regarding your account or deposits? Click the button below to request direct assistance from our support team quickly."""
     bot.send_message(
         message.chat.id,
-        "🛠️ **Support**\n\nFor any issues or questions, contact admin.",
+        support_intro,
         parse_mode="Markdown",
+        reply_markup=markup,
     )
 
 
@@ -607,6 +614,95 @@ def handle_callback(call):
       bot.answer_callback_query(call.id, "✅ History updated successfully!")
     except Exception:
       bot.answer_callback_query(call.id, "⚠️ History is already up to date.")
+
+  elif data == "request_support":
+    user_data = get_user(user_id)
+    username = f"@{call.from_user.username}" if call.from_user.username else "No Username"
+    name = call.from_user.first_name or "User"
+    bal = user_data[2] if user_data else 0.00
+
+    admin_msg = f"""🔔 **NEW SUPPORT REQUEST**
+
+👤 **USER PROFILE:**
+• **Name:** {name}
+• **Username:** {username}
+• **User ID:** `{user_id}`
+• **Current Balance:** `${bal:.2f} USDT`
+
+The user is requesting assistance from the support team."""
+
+    admin_markup = InlineKeyboardMarkup(row_width=2)
+    admin_markup.add(
+        InlineKeyboardButton("✅ Accept", callback_data=f"supp_app_{user_id}"),
+        InlineKeyboardButton("❌ Reject", callback_data=f"supp_rej_{user_id}"),
+    )
+
+    try:
+      bot.send_message(
+          ADMIN_ID, admin_msg, parse_mode="Markdown", reply_markup=admin_markup
+      )
+    except Exception as e:
+      print(f"Error sending support request to admin: {e}")
+
+    bot.answer_callback_query(
+        call.id,
+        "✅ Support request sent to admin! Please wait for response.",
+        show_alert=True,
+    )
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text="🛠️ **SUPPORT CENTER**\n\n⏳ Your support request has been sent to the admin. Please wait for approval.",
+        parse_mode="Markdown",
+    )
+
+  elif data.startswith("supp_app_"):
+    if user_id != ADMIN_ID:
+      bot.answer_callback_query(call.id, "❌ Unauthorized action!", show_alert=True)
+      return
+
+    target_user_id = int(data.replace("supp_app_", ""))
+
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=call.message.text + f"\n\n✅ **STATUS:** `ACCEPTED BY ADMIN`",
+        parse_mode="Markdown",
+    )
+    bot.answer_callback_query(call.id, "✅ Support request accepted!")
+
+    user_success_msg = """✅ **Support Request Accepted!**
+
+Dear User,
+Your support request has been accepted by the admin. You can now communicate your issue or questions directly."""
+    try:
+      bot.send_message(target_user_id, user_success_msg, parse_mode="Markdown")
+    except Exception as e:
+      print(f"Error notifying user: {e}")
+
+  elif data.startswith("supp_rej_"):
+    if user_id != ADMIN_ID:
+      bot.answer_callback_query(call.id, "❌ Unauthorized action!", show_alert=True)
+      return
+
+    target_user_id = int(data.replace("supp_rej_", ""))
+
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=call.message.text + f"\n\n❌ **STATUS:** `REJECTED BY ADMIN`",
+        parse_mode="Markdown",
+    )
+    bot.answer_callback_query(call.id, "❌ Support request rejected.")
+
+    user_reject_msg = """❌ **Support Request Declined**
+
+Dear User,
+Your support request has been declined by the admin at this time."""
+    try:
+      bot.send_message(target_user_id, user_reject_msg, parse_mode="Markdown")
+    except Exception as e:
+      print(f"Error notifying user: {e}")
 
   elif data.startswith("dep_amt_"):
     amount = data.replace("dep_amt_", "")
@@ -769,7 +865,6 @@ Your balance will be updated automatically once the admin approves your transact
     conn.commit()
     conn.close()
 
-    # Balances-ka ayaa si toos ah loo update-gareeyay
     update_balance(target_user_id, amount)
     add_notification(
         target_user_id,
