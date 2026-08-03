@@ -465,6 +465,27 @@ def admin_menu():
     )
     return markup
 
+def back_button():
+    from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+    markup = InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back")
+    )
+    return markup
+
+def profile_menu():
+    from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("👤 My Profile", callback_data="profile"),
+        InlineKeyboardButton("💳 Deposit", callback_data="deposit"),
+        InlineKeyboardButton("⛏️ Mining", callback_data="mining"),
+        InlineKeyboardButton("💸 Withdraw", callback_data="withdraw"),
+        InlineKeyboardButton("📜 History", callback_data="history"),
+        InlineKeyboardButton("👥 Referral", callback_data="referral")
+    )
+    return markup
+
 # ========== BOT COMMANDS ==========
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -907,7 +928,7 @@ def handle_callback(call):
         bot.answer_callback_query(call.id, "🔧 Bot is under maintenance")
         return
     
-    # ===== USER FEATURES =====
+    # ===== WALLET =====
     if data == "wallet":
         user = get_user(user_id)
         if user:
@@ -915,12 +936,10 @@ def handle_callback(call):
                 f"""
 👛 **Your Wallet**
 
-💰 Balance: `{user[2]:.2f}` USDT
+💰 Balance: `${user[2]:.2f}` USDT
 🆔 User ID: `{user[0]}`
 
 📊 Networks: TRC20, BEP20, ERC20, TON
-
-🔙 Press back to return:
 """,
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
@@ -928,30 +947,38 @@ def handle_callback(call):
                 reply_markup=back_button()
             )
     
+    # ===== PROFILE - Sida sawirkaaga =====
     elif data == "profile":
         user = get_user(user_id)
         if user:
-            referrals = get_referral_count(user_id)
+            active_deposit = 0.00
+            total_profit = 0.00
+            status = "No Deposit" if (user[2] or 0) == 0 else "Active"
+            withdrawal_lock = "Unlocked"
+            
             bot.edit_message_text(
                 f"""
-👤 **Your Profile**
+👤 **PROFILE**
 
 🆔 ID: `{user[0]}`
-👤 Username: @{user[1] or 'No username'}
-💰 Balance: `{user[2]:.2f}` USDT
-📅 Registered: {user[4] or 'N/A'}
-👥 Referrals: {referrals}
+👤 Name: @{user[1] or 'No username'}
+💰 Balance: ${user[2]:.2f}
+📊 Active Deposit: ${active_deposit:.2f}
+📈 Total Profit: ${total_profit:.2f}
+📌 Status: {status}
+🔒 Withdrawal Lock: {withdrawal_lock}
 
-Status: 🟢 Active
+━━━━━━━━━━━━━━━━━━━
 
-🔙 Press back to return:
+📱 **Menu**
 """,
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 parse_mode='Markdown',
-                reply_markup=back_button()
+                reply_markup=profile_menu()
             )
     
+    # ===== DEPOSIT =====
     elif data == "deposit":
         bot.edit_message_text(
             "💳 **Deposit**\n\nSelect network to see deposit address:",
@@ -961,6 +988,7 @@ Status: 🟢 Active
             reply_markup=deposit_networks()
         )
     
+    # ===== DEPOSIT NETWORKS =====
     elif data.startswith("deposit_"):
         network = data.replace("deposit_", "").upper()
         
@@ -1004,6 +1032,7 @@ Status: 🟢 Active
             reply_markup=markup
         )
     
+    # ===== SUBMIT DEPOSIT =====
     elif data == "submit_deposit":
         bot.edit_message_text(
             f"""
@@ -1015,8 +1044,6 @@ Send the amount you sent:
 
 Min: {get_setting('min_deposit')} USDT
 Max: {get_setting('max_deposit')} USDT
-
-🔙 Press back to return:
 """,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -1024,6 +1051,7 @@ Max: {get_setting('max_deposit')} USDT
             reply_markup=back_button()
         )
     
+    # ===== WITHDRAW =====
     elif data == "withdraw":
         bot.edit_message_text(
             f"""
@@ -1034,8 +1062,6 @@ Send amount:
 
 Min: {get_setting('min_withdraw')} USDT
 Max: {get_setting('max_withdraw')} USDT
-
-🔙 Press back to return:
 """,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -1043,6 +1069,7 @@ Max: {get_setting('max_withdraw')} USDT
             reply_markup=back_button()
         )
     
+    # ===== BONUS =====
     elif data == "bonus":
         bonus_amount = float(get_setting('bonus_amount') or 1.0)
         update_balance(user_id, bonus_amount)
@@ -1051,13 +1078,11 @@ Max: {get_setting('max_withdraw')} USDT
             f"""
 🎁 **Daily Bonus**
 
-✅ Received: `{bonus_amount:.2f}` USDT
+✅ Received: `${bonus_amount:.2f}` USDT
 
-💰 New Balance: `{user[2]:.2f}` USDT
+💰 New Balance: `${user[2]:.2f}` USDT
 
 📌 Come back tomorrow for more!
-
-🔙 Press back to return:
 """,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -1065,6 +1090,7 @@ Max: {get_setting('max_withdraw')} USDT
             reply_markup=back_button()
         )
     
+    # ===== REFERRAL =====
     elif data == "referral":
         bot_username = bot.get_me().username
         link = f"https://t.me/{bot_username}?start={user_id}"
@@ -1082,8 +1108,6 @@ Max: {get_setting('max_withdraw')} USDT
 👥 Total referrals: {referrals}
 
 Share your link and earn!
-
-🔙 Press back to return:
 """,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -1091,6 +1115,7 @@ Share your link and earn!
             reply_markup=back_button()
         )
     
+    # ===== HISTORY =====
     elif data == "history":
         history = get_transaction_history(user_id, 10)
         if not history:
@@ -1100,11 +1125,10 @@ Share your link and earn!
             for tx in history:
                 status_emoji = "✅" if tx[2] == "APPROVED" else "❌" if tx[2] == "REJECTED" else "⏳"
                 text += f"{status_emoji} **{tx[0]}**\n"
-                text += f"   Amount: {tx[1]:.2f} USDT\n"
+                text += f"   Amount: ${tx[1]:.2f}\n"
                 text += f"   Status: {tx[2]}\n"
                 text += f"   Date: {tx[4][:16]}\n\n"
         
-        text += "\n🔙 Press back to return:"
         bot.edit_message_text(
             text,
             chat_id=call.message.chat.id,
@@ -1113,6 +1137,7 @@ Share your link and earn!
             reply_markup=back_button()
         )
     
+    # ===== SETTINGS =====
     elif data == "settings":
         bot.edit_message_text(
             """
@@ -1125,8 +1150,6 @@ Share your link and earn!
 🛡️ Security: Basic
 
 ℹ️ USDTPilotBot Demo
-
-🔙 Press back to return:
 """,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -1134,6 +1157,7 @@ Share your link and earn!
             reply_markup=back_button()
         )
     
+    # ===== NOTIFICATIONS =====
     elif data == "notifications":
         notifs = get_notifications(user_id)
         count = get_unread_count(user_id)
@@ -1147,7 +1171,6 @@ Share your link and earn!
                 text += f"{emoji} {n[1]}\n📅 {n[3][:16]}\n\n"
         
         mark_all_notifications_read(user_id)
-        text += "\n🔙 Press back to return:"
         bot.edit_message_text(
             text,
             chat_id=call.message.chat.id,
@@ -1156,6 +1179,32 @@ Share your link and earn!
             reply_markup=back_button()
         )
     
+    # ===== MINING =====
+    elif data == "mining":
+        user = get_user(user_id)
+        mining_rate = 0.5
+        daily_earning = mining_rate * 24
+        
+        bot.edit_message_text(
+            f"""
+⛏️ **Mining Dashboard**
+
+💰 Current Balance: ${user[2]:.2f}
+⚡ Mining Rate: {mining_rate} USDT/hour
+📊 Daily Earning: {daily_earning:.2f} USDT
+📌 Total Mined: ${user[2]:.2f}
+
+📌 Status: Active
+
+Start mining by making a deposit!
+""",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=back_button()
+        )
+    
+    # ===== BACK =====
     elif data == "back":
         bot.edit_message_text(
             "🏠 **Main Menu**\n\nChoose service below:",
@@ -1181,7 +1230,7 @@ Share your link and earn!
             else:
                 text = f"📋 **Pending Requests:** {len(pending)}\n\n"
                 for r in pending[:10]:
-                    text += f"🆔 `{r[0]}` | @{r[2] or r[1]} | {r[3]} | {r[4]:.2f} USDT\n"
+                    text += f"🆔 `{r[0]}` | @{r[2] or r[1]} | {r[3]} | ${r[4]:.2f}\n"
                     text += f"   🌐 {r[5]} | 📅 {r[6][:16]}\n\n"
             
             from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -1209,7 +1258,7 @@ Share your link and earn!
 📅 {datetime.now().strftime('%Y-%m-%d')}
 
 👥 Total Users: `{stats['total_users']}`
-💰 Total Balance: `{stats['total_balance']:.2f}` USDT
+💰 Total Balance: `${stats['total_balance']:.2f}`
 
 📈 **Transactions:**
 📥 Deposits: `{stats['total_deposits']}`
@@ -1241,7 +1290,7 @@ Commands: /daily, /weekly, /top
             users = get_all_users()
             text = f"👥 **Total Users:** {len(users)}\n\n"
             for u in users[:10]:
-                text += f"🆔 `{u[0]}` | @{u[1] or 'No username'} | {u[2]:.2f} USDT\n"
+                text += f"🆔 `{u[0]}` | @{u[1] or 'No username'} | ${u[2]:.2f}\n"
             
             from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
             markup = InlineKeyboardMarkup(row_width=1)
@@ -1299,8 +1348,8 @@ Commands: /daily, /weekly, /top
 📅 {datetime.now().strftime('%Y-%m-%d')}
 
 👥 New Users: {stats['new_users']}
-💰 Total Deposits: {stats['total_deposits']:.2f} USDT
-💸 Total Withdraws: {stats['total_withdraws']:.2f} USDT
+💰 Total Deposits: ${stats['total_deposits']:.2f}
+💸 Total Withdraws: ${stats['total_withdraws']:.2f}
 ⏳ Pending: {stats['pending']}
 ✅ Approved: {stats['approved']}
 ❌ Rejected: {stats['rejected']}
@@ -1317,8 +1366,8 @@ Commands: /daily, /weekly, /top
 📅 {start.strftime('%Y-%m-%d')} - {end.strftime('%Y-%m-%d')}
 
 👥 New Users: {stats['new_users']}
-💰 Total Deposits: {stats['total_deposits']:.2f} USDT
-💸 Total Withdraws: {stats['total_withdraws']:.2f} USDT
+💰 Total Deposits: ${stats['total_deposits']:.2f}
+💸 Total Withdraws: ${stats['total_withdraws']:.2f}
 ⏳ Pending: {stats['pending']}
 ✅ Approved: {stats['approved']}
 ❌ Rejected: {stats['rejected']}
@@ -1335,7 +1384,7 @@ Commands: /daily, /weekly, /top
                 medals = ["🥇", "🥈", "🥉"]
                 for i, u in enumerate(top, 1):
                     medal = medals[i-1] if i <= 3 else f"{i}."
-                    text += f"{medal} @{u[1] or u[0]} - {u[2]:.2f} USDT\n"
+                    text += f"{medal} @{u[1] or u[0]} - ${u[2]:.2f}\n"
             
             bot.answer_callback_query(call.id, "🏆 Top users sent")
             bot.send_message(user_id, text, parse_mode='Markdown')
@@ -1358,7 +1407,7 @@ Commands: /daily, /weekly, /top
         if pending:
             text = f"📋 **Pending Requests:** {len(pending)}\n\n"
             for r in pending[:10]:
-                text += f"🆔 `{r[0]}` | @{r[2] or r[1]} | {r[3]} | {r[4]:.2f} USDT\n"
+                text += f"🆔 `{r[0]}` | @{r[2] or r[1]} | {r[3]} | ${r[4]:.2f}\n"
                 text += f"   🌐 {r[5]} | 📅 {r[6][:16]}\n\n"
         else:
             text = "✅ No pending requests"
@@ -1383,15 +1432,6 @@ Commands: /daily, /weekly, /top
     else:
         bot.answer_callback_query(call.id, "Unknown action")
 
-# ========== BACK BUTTON ==========
-def back_button():
-    from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-    markup = InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back")
-    )
-    return markup
-
 # ========== ADMIN DASHBOARD ==========
 def show_admin_dashboard(message):
     stats = get_admin_stats()
@@ -1403,7 +1443,7 @@ def show_admin_dashboard(message):
 👥 Total Users: `{stats['total_users']}`
 🆕 Today: `{stats['today_users']}`
 
-💰 Total Balance: `{stats['total_balance']:.2f}` USDT
+💰 Total Balance: `${stats['total_balance']:.2f}`
 
 📈 **Transactions:**
 📥 Deposits: `{stats['total_deposits']}`
@@ -1429,7 +1469,7 @@ def show_admin_dashboard_callback(call):
 👥 Total Users: `{stats['total_users']}`
 🆕 Today: `{stats['today_users']}`
 
-💰 Total Balance: `{stats['total_balance']:.2f}` USDT
+💰 Total Balance: `${stats['total_balance']:.2f}`
 
 📈 **Transactions:**
 📥 Deposits: `{stats['total_deposits']}`
