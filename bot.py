@@ -72,6 +72,25 @@ def init_db():
 
 init_db()
 
+# ========== TOGGLE KEYBOARD ==========
+keyboard_visible = {}
+
+def toggle_keyboard(user_id):
+    if user_id in keyboard_visible:
+        keyboard_visible[user_id] = not keyboard_visible[user_id]
+    else:
+        keyboard_visible[user_id] = True
+    return keyboard_visible[user_id]
+
+def is_keyboard_visible(user_id):
+    return keyboard_visible.get(user_id, True)
+
+def get_keyboard_menu(user_id):
+    if is_keyboard_visible(user_id):
+        return profile_menu()
+    else:
+        return back_button()
+
 # ========== DATABASE FUNCTIONS ==========
 def get_setting(key):
     conn = sqlite3.connect('bot.db')
@@ -432,7 +451,21 @@ def main_menu():
         InlineKeyboardButton("💳 Deposit", callback_data="deposit"),
         InlineKeyboardButton("💸 Withdraw", callback_data="withdraw"),
         InlineKeyboardButton("📜 History", callback_data="history"),
-        InlineKeyboardButton("👥 Referral", callback_data="referral")
+        InlineKeyboardButton("👥 Referral", callback_data="referral"),
+        InlineKeyboardButton("⌨️ Toggle Keyboard", callback_data="toggle_keyboard")
+    )
+    return markup
+
+def profile_menu():
+    from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("👤 My Profile", callback_data="profile"),
+        InlineKeyboardButton("💳 Deposit", callback_data="deposit"),
+        InlineKeyboardButton("💸 Withdraw", callback_data="withdraw"),
+        InlineKeyboardButton("📜 History", callback_data="history"),
+        InlineKeyboardButton("👥 Referral", callback_data="referral"),
+        InlineKeyboardButton("⌨️ Toggle Keyboard", callback_data="toggle_keyboard")
     )
     return markup
 
@@ -466,18 +499,6 @@ def back_button():
     markup = InlineKeyboardMarkup(row_width=1)
     markup.add(
         InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back")
-    )
-    return markup
-
-def profile_menu():
-    from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-    markup = InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        InlineKeyboardButton("👤 My Profile", callback_data="profile"),
-        InlineKeyboardButton("💳 Deposit", callback_data="deposit"),
-        InlineKeyboardButton("💸 Withdraw", callback_data="withdraw"),
-        InlineKeyboardButton("📜 History", callback_data="history"),
-        InlineKeyboardButton("👥 Referral", callback_data="referral")
     )
     return markup
 
@@ -518,6 +539,8 @@ def start(message):
 {datetime.now().strftime('%I:%M %p')}
 
 ━━━━━━━━━━━━━━━━━━━
+
+⌨️ **Keyboard: Visible**
 
 📱 **Menu**
 """,
@@ -935,6 +958,8 @@ def handle_callback(call):
             status = "No Deposit" if (user[2] or 0) == 0 else "Active"
             withdrawal_lock = "Unlocked"
             
+            keyboard_status = "Visible" if is_keyboard_visible(user_id) else "Hidden"
+            
             bot.edit_message_text(
                 f"""
 👤 **PROFILE**
@@ -951,12 +976,54 @@ def handle_callback(call):
 
 ━━━━━━━━━━━━━━━━━━━
 
+⌨️ **Keyboard: {keyboard_status}**
+
 📱 **Menu**
 """,
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 parse_mode='Markdown',
-                reply_markup=profile_menu()
+                reply_markup=get_keyboard_menu(user_id)
+            )
+    
+    # ===== TOGGLE KEYBOARD =====
+    elif data == "toggle_keyboard":
+        visible = toggle_keyboard(user_id)
+        user = get_user(user_id)
+        
+        if user:
+            active_deposit = 0.00
+            total_profit = 0.00
+            status = "No Deposit" if (user[2] or 0) == 0 else "Active"
+            withdrawal_lock = "Unlocked"
+            
+            keyboard_status = "Visible" if visible else "Hidden"
+            menu = profile_menu() if visible else back_button()
+            
+            bot.edit_message_text(
+                f"""
+👤 **PROFILE**
+
+🆔 ID: `{user[0]}`
+👤 Name: @{user[1] or 'No username'}
+💰 Balance: ${user[2]:.2f}
+📊 Active Deposit: ${active_deposit:.2f}
+📈 Total Profit: ${total_profit:.2f}
+📌 Status: {status}
+🔒 Withdrawal Lock: {withdrawal_lock}
+
+{datetime.now().strftime('%I:%M %p')}
+
+━━━━━━━━━━━━━━━━━━━
+
+⌨️ **Keyboard: {keyboard_status}**
+
+{"📱 **Menu**" if visible else "🔹 Tap menu button below to show options"}
+""",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                parse_mode='Markdown',
+                reply_markup=menu
             )
     
     # ===== DEPOSIT =====
@@ -1099,13 +1166,40 @@ Share your link and earn!
     
     # ===== BACK =====
     elif data == "back":
-        bot.edit_message_text(
-            "👤 **PROFILE**\n\n{datetime.now().strftime('%I:%M %p')}\n\n━━━━━━━━━━━━━━━━━━━\n\n📱 **Menu**",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode='Markdown',
-            reply_markup=profile_menu()
-        )
+        user = get_user(user_id)
+        if user:
+            active_deposit = 0.00
+            total_profit = 0.00
+            status = "No Deposit" if (user[2] or 0) == 0 else "Active"
+            withdrawal_lock = "Unlocked"
+            
+            keyboard_status = "Visible" if is_keyboard_visible(user_id) else "Hidden"
+            
+            bot.edit_message_text(
+                f"""
+👤 **PROFILE**
+
+🆔 ID: `{user[0]}`
+👤 Name: @{user[1] or 'No username'}
+💰 Balance: ${user[2]:.2f}
+📊 Active Deposit: ${active_deposit:.2f}
+📈 Total Profit: ${total_profit:.2f}
+📌 Status: {status}
+🔒 Withdrawal Lock: {withdrawal_lock}
+
+{datetime.now().strftime('%I:%M %p')}
+
+━━━━━━━━━━━━━━━━━━━
+
+⌨️ **Keyboard: {keyboard_status}**
+
+📱 **Menu**
+""",
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                parse_mode='Markdown',
+                reply_markup=get_keyboard_menu(user_id)
+            )
     
     # ===== ADMIN FEATURES =====
     elif data.startswith("admin_"):
