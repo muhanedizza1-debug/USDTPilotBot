@@ -329,7 +329,6 @@ def send_profile_card(chat_id, user_id, name, send_welcome_photo=False):
   )
 
 
-# Function-ka soo saaraya qoraalka History-ga si loo isticmaali karo Command iyo Callback-ba
 def generate_history_text(user_id):
   history = get_transaction_history(user_id, 10)
   if not history:
@@ -341,7 +340,6 @@ def generate_history_text(user_id):
   res_text = "📜 **TRANSACTION HISTORY** (Live Updates)\n\n"
   for tx in history:
     tx_type, amount, status, network, created_at = tx
-    # Calaamadaha xaaladaha kala duwan
     if status == "APPROVED" or status == "SUCCESS":
       status_emoji = "✅"
       status_desc = "SUCCESSFUL"
@@ -399,20 +397,35 @@ def handle_reply_menu(message):
     )
 
   elif text == "💎 Investment":
+    # ── QAYBTA INVESTMENT-KA OO LA QURXIYAY (PROFESSIONAL EMOJIS & LAYOUT) ──
     markup = InlineKeyboardMarkup(row_width=2)
     amounts = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-    buttons = [
-        InlineKeyboardButton(
-            f"💲 ${amt} (+20% in 24h)", callback_data=f"invest_{amt}"
-        )
-        for amt in amounts
-    ]
+    buttons = []
+    for amt in amounts:
+      profit_amt = amt * 0.20
+      buttons.append(
+          InlineKeyboardButton(
+              f"💎 ${amt} USDT ➔ +${profit_amt:.1f} Profit",
+              callback_data=f"invest_{amt}",
+          )
+      )
     markup.add(*buttons)
+
+    invest_menu_text = """💎 **PROFESSIONAL INVESTMENT CENTER**
+
+Grow your capital securely with our automated hourly profit system.
+
+📊 **Plan Overview:**
+• **Return Rate:** `+20% Total Profit`
+• **Duration:** `24 Hours Cycle`
+• **Profit Distribution:** `Added Every Hour Automatically ⏱️`
+• **Security Lock:** `7 Days Policy Enforced 🛡️`
+
+👇 **Select your investment amount below to start earning instantly:**"""
 
     bot.send_message(
         message.chat.id,
-        "💎 **Investment Plans (20% Profit in 24 Hours)**\n\nChoose an amount"
-        " to invest from your balance:",
+        invest_menu_text,
         parse_mode="Markdown",
         reply_markup=markup,
     )
@@ -565,7 +578,7 @@ Your transaction is being processed. Funds will be transferred to your wallet sh
 user_deposit_amounts = {}
 
 
-# ========== CALLBACK HANDLERS (Deposit Networks, Investment & History Refresh) ==========
+# ========== CALLBACK HANDLERS ==========
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
   user_id = call.from_user.id
@@ -716,10 +729,15 @@ Your balance will be updated automatically once the admin approves your transact
     )
     bot.send_message(
         call.message.chat.id,
-        f"💎 **Investment Activated!**\n\nAmount: `${amount}`\nExpected Profit:"
-        f" `+${amount * 0.20:.2f}` (20% in 24h)\n⏱️ ** Hourly Profit:** Added"
-        " every hour automatically!\n🛡️ **7 Days Lock:** Applies to principal &"
-        " earnings.",
+        f"""🚀 **INVESTMENT SUCCESSFULLY ACTIVATED!**
+
+💵 **Invested Amount:** `${amount:.2f} USDT`
+📈 **Total Expected Profit:** `+${amount * 0.20:.2f} USDT` (20%)
+⏱️ **Hourly Distribution:** `Active (Credited every hour)`
+⏳ **Duration:** `24 Hours Cycle`
+🛡️ **Security Policy:** `7 Days Lock (Applies to Principal & Profit)`
+
+Your earnings are now growing automatically!""",
         parse_mode="Markdown",
     )
 
@@ -728,12 +746,13 @@ Your balance will be updated automatically once the admin approves your transact
 @app.route("/")
 @app.route("/health")
 def health():
-  return "✅ USDTPilotBot is running 24/7 with Live History, Terms & Hourly Profits!"
+  return "✅ USDTPilotBot is running 24/7 with Professional Investment & Live History!"
 
 
 if __name__ == "__main__":
   print(
-      "🚀 USDTPilotBot is starting with Live History Refresh, Banner & Terms..."
+      "🚀 USDTPilotBot is starting with Professional Investment Menu, Live"
+      " History & Banner..."
   )
 
   inv_thread = threading.Thread(target=check_investments, daemon=True)
