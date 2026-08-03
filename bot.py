@@ -75,9 +75,9 @@ def init_db():
   default_settings = {
       "bonus_amount": "1.0",
       "min_deposit": "10",
-      "max_deposit": "1000",
+      "max_deposit": "10000",
       "min_withdraw": "10",
-      "max_withdraw": "1000",
+      "max_withdraw": "10000",
       "referral_bonus": "0.5",
       "maintenance_mode": "false",
       "welcome_message": "Welcome to USDTPilotBot! 🚀 Invest & earn 20% profit in 24 hours.",
@@ -108,11 +108,13 @@ def get_main_reply_keyboard():
   btn_referral = KeyboardButton("🎁 Referral")
   btn_terms = KeyboardButton("📜 Terms")
   btn_support = KeyboardButton("🛠️ Support")
+  btn_back = KeyboardButton("🔙 Back")
 
   markup.add(btn_profile, btn_deposit)
   markup.add(btn_investment, btn_withdraw)
   markup.add(btn_history, btn_referral)
   markup.add(btn_terms, btn_support)
+  markup.add(btn_back)
   return markup
 
 
@@ -379,6 +381,7 @@ def generate_history_text(user_id):
         "🎁 Referral",
         "📜 Terms",
         "🛠️ Support",
+        "🔙 Back",
     ]
 )
 def handle_reply_menu(message):
@@ -508,6 +511,9 @@ By using USDTPilotBot, you agree to abide by these rules and conditions."""
         "🛠️ **Support**\n\nFor any issues or questions, contact admin: @USDTPilotBotsupport12",
         parse_mode="Markdown",
     )
+
+  elif text == "🔙 Back":
+    send_profile_card(message.chat.id, user_id, name)
 
 
 @bot.message_handler(commands=["withdraw"])
