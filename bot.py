@@ -18,6 +18,9 @@ BOT_TOKEN = "8626470350:AAFxJ3S5FjEjgBK-ySNAaKAZHvuOGRhLQ3A"
 ADMIN_ID = 7076265514
 ADMIN_PIN = "1234"
 
+# Sawirka quruxda badan ee ku soobaxaya Welcome message-ka
+WELCOME_BANNER = "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?w=800&auto=format&fit=crop&q=60"
+
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
@@ -103,12 +106,13 @@ def get_main_reply_keyboard():
   btn_withdraw = KeyboardButton("💸 Withdraw")
   btn_history = KeyboardButton("📜 History")
   btn_referral = KeyboardButton("🎁 Referral")
+  btn_terms = KeyboardButton("📜 Terms & Conditions")
   btn_support = KeyboardButton("🛠️ Support")
 
   markup.add(btn_profile, btn_deposit)
   markup.add(btn_investment, btn_withdraw)
   markup.add(btn_history, btn_referral)
-  markup.add(btn_support)
+  markup.add(btn_terms, btn_support)
   return markup
 
 
@@ -198,68 +202,6 @@ def add_request(user_id, req_type, amount, network):
   )
 
 
-def get_pending():
-  conn = sqlite3.connect("bot.db")
-  c = conn.cursor()
-  c.execute(
-      "SELECT * FROM transactions WHERE status='PENDING' ORDER BY created_at DESC"
-  )
-  return c.fetchall()
-
-
-def get_pending_with_users():
-  conn = sqlite3.connect("bot.db")
-  c = conn.cursor()
-  c.execute("""
-    SELECT t.id, t.user_id, u.username, t.type, t.amount, t.network, t.created_at
-    FROM transactions t
-    JOIN users u ON t.user_id = u.id
-    WHERE t.status='PENDING'
-    ORDER BY t.created_at DESC
-    """)
-  data = c.fetchall()
-  conn.close()
-  return data
-
-
-def update_transaction(tx_id, status):
-  conn = sqlite3.connect("bot.db")
-  c = conn.cursor()
-  c.execute("UPDATE transactions SET status=? WHERE id=?", (status, tx_id))
-  conn.commit()
-  conn.close()
-  if status == "APPROVED":
-    conn = sqlite3.connect("bot.db")
-    c = conn.cursor()
-    c.execute(
-        "SELECT user_id, amount, type FROM transactions WHERE id=?", (tx_id,)
-    )
-    tx = c.fetchone()
-    if tx:
-      if tx[2] == "DEPOSIT":
-        update_balance(tx[0], tx[1])
-        add_notification(
-            tx[0],
-            f"✅ Deposit of {tx[1]} USDT approved! Balance updated.",
-            "SUCCESS",
-        )
-      elif tx[2] == "WITHDRAW":
-        add_notification(
-            tx[0], f"✅ Withdraw of {tx[1]} USDT approved!", "SUCCESS"
-        )
-    conn.close()
-  elif status == "REJECTED":
-    conn = sqlite3.connect("bot.db")
-    c = conn.cursor()
-    c.execute(
-        "SELECT user_id, amount, type FROM transactions WHERE id=?", (tx_id,)
-    )
-    tx = c.fetchone()
-    if tx:
-      add_notification(tx[0], f"❌ {tx[2]} of {tx[1]} USDT rejected.", "WARNING")
-    conn.close()
-
-
 def get_transaction_history(user_id, limit=20):
   conn = sqlite3.connect("bot.db")
   c = conn.cursor()
@@ -288,23 +230,24 @@ def add_notification(user_id, message, type="INFO"):
   conn.close()
 
 
-admin_sessions = {}
-
-
-def is_admin_logged_in(user_id):
-  return user_id == ADMIN_ID and admin_sessions.get(user_id, False)
-
-
-def admin_login(user_id):
-  admin_sessions[user_id] = True
-
-
-# ========== BACKGROUND INVESTMENT CHECKER (24 Hours Profit) ==========
+# ========== BACKGROUND WORKER: HOURLY PROFIT & 24H INVESTMENT CHECKER ==========
 def check_investments():
   while True:
     try:
       conn = sqlite3.connect("bot.db")
       c = conn.cursor()
+
+      # 1. Hourly Profit Distribution (20% total per 24h = ~0.833% per hour)
+      c.execute("SELECT id, user_id, amount FROM investments WHERE status='ACTIVE'")
+      active_investments = c.fetchall()
+
+      for inv in active_investments:
+        inv_id, user_id, amount = inv
+        hourly_profit = (amount * 0.20) / 24  # Qaybta saacadda ku soo aadaysa
+        # Ku dar balance-ka saacad walba si qofku u arko
+        update_balance(user_id, hourly_profit)
+
+      # 2. Check if 24 hours completed to mark investment as COMPLETED
       c.execute("""
                 SELECT id, user_id, amount FROM investments 
                 WHERE status='ACTIVE' AND datetime(created_at, '+24 hours') <= datetime('now')
@@ -313,26 +256,21 @@ def check_investments():
 
       for inv in expired_investments:
         inv_id, user_id, amount = inv
-        profit = amount * 0.20  # 20% Profit
-        total_return = amount + profit
-
         c.execute(
             "UPDATE investments SET status='COMPLETED' WHERE id=?", (inv_id,)
         )
         conn.commit()
-
-        update_balance(user_id, total_return)
         add_notification(
             user_id,
-            f"🎉 Investment completed! You received ${total_return:.2f}"
-            f" (${amount} principal + ${profit:.2f} profit 20%).",
+            f"🎉 Investment completed for ${amount}! Your 20% total profit"
+            " cycle finished.",
             "SUCCESS",
         )
 
       conn.close()
     except Exception as e:
       print(f"Error in background worker: {e}")
-    time.sleep(60)
+    time.sleep(3600)  # Waxay shaqaynaysaa saacad walba (3600 ilbiriqsi)
 
 
 # ========== BOT COMMANDS & MESSAGE HANDLERS ==========
@@ -355,10 +293,12 @@ def start(message):
       pass
 
   add_user(user_id, username, referred_by)
-  send_profile_card(message.chat.id, user_id, username)
+  send_profile_card(message.chat.id, user_id, username, send_welcome_photo=True)
 
 
-def send_profile_card(chat_id, user_id, name):
+def send_profile_card(
+    chat_id, user_id, name, send_welcome_photo=False
+):
   user = get_user(user_id)
   balance = user[2] if user else 0.00
   active_deposit = get_active_deposit(user_id)
@@ -366,15 +306,26 @@ def send_profile_card(chat_id, user_id, name):
   status = "No Deposit" if balance == 0 and active_deposit == 0 else "Active"
   current_time = datetime.now().strftime("%I:%M %p")
 
-  text = f"""👤 **PROFILE**
+  text = f"""👤 **PROFILE & DASHBOARD**
 
 🆔 ID: `{user_id}`
 👤 Name: {name}
 💰 Balance: ${balance:.2f}
 📊 Active Deposit: ${active_deposit:.2f}
-📈 Total Profit: ${total_profit:.2f}
+📈 Hourly Profit: Active (Updates Every Hour) ⏳
 ⏳ Status: {status}
-🔓 Withdrawal Lock: Unlocked ✅ {current_time}"""
+🔓 Withdrawal Lock: 7 Days Policy Enforced 🛡️ ({current_time})"""
+
+  if send_welcome_photo:
+    bot.send_photo(
+        chat_id,
+        WELCOME_BANNER,
+        caption=(
+            "🚀 **Welcome to USDTPilotBot!**\n\nInvest & earn 20% profit in"
+            " 24 hours with hourly updates."
+        ),
+        parse_mode="Markdown",
+    )
 
   bot.send_message(
       chat_id,
@@ -394,6 +345,7 @@ def send_profile_card(chat_id, user_id, name):
         "💸 Withdraw",
         "📜 History",
         "🎁 Referral",
+        "📜 Terms & Conditions",
         "🛠️ Support",
     ]
 )
@@ -451,6 +403,7 @@ def handle_reply_menu(message):
 Send amount using command:
 `/withdraw 50`
 
+⚠️ **Rule:** Withdrawal is allowed only after **7 days** from your deposit/investment time.
 Min: {get_setting('min_withdraw')} USDT
 Max: {get_setting('max_withdraw')} USDT""",
         parse_mode="Markdown",
@@ -489,6 +442,22 @@ Share your link and earn!""",
         parse_mode="Markdown",
     )
 
+  elif text == "📜 Terms & Conditions":
+    terms_text = """📜 **Terms & Conditions / Privacy Policy**
+
+1. **Investment & Profits:**
+   • You earn a 20% profit cycle over 24 hours.
+   • Profits are calculated and added to your balance **every hour automatically**.
+
+2. **Withdrawal Lock (7-Day Policy):**
+   • For security and stability, both your principal deposit and accumulated profits can only be withdrawn **after 7 days** from the exact hour of your deposit/investment.
+
+3. **Privacy Policy:**
+   • Your user data, Telegram ID, and transaction records are kept secure and confidential. We never share your details with third parties.
+
+By using USDTPilotBot, you agree to abide by these rules and conditions."""
+    bot.send_message(message.chat.id, terms_text, parse_mode="Markdown")
+
   elif text == "🛠️ Support":
     bot.send_message(
         message.chat.id,
@@ -517,6 +486,35 @@ def withdraw_command(message):
     )
     return
 
+  # Hubinta xeerka 7-da maalmood ee transactions-ka ama investments-ka
+  conn = sqlite3.connect("bot.db")
+  c = conn.cursor()
+  c.execute(
+      """
+        SELECT created_at FROM transactions 
+        WHERE user_id=? AND type='DEPOSIT' AND status='APPROVED' 
+        ORDER BY created_at DESC LIMIT 1
+    """,
+      (user_id,),
+  )
+  last_deposit = c.fetchone()
+  conn.close()
+
+  if last_deposit:
+    deposit_time = datetime.strptime(last_deposit[0], "%Y-%m-%d %H:%M:%S")
+    if datetime.now() < deposit_time + timedelta(days=7):
+      remaining = (deposit_time + timedelta(days=7)) - datetime.now()
+      days_left = remaining.days
+      hours_left = remaining.seconds // 3600
+      bot.reply_to(
+          message,
+          f"❌ **Withdrawal Locked!**\n\nPer our 7-day policy, you can withdraw"
+          f" your deposit and profits after 7 days from your deposit time.\n⏳"
+          f" Time remaining: `{days_left} days and {hours_left} hours`.",
+          parse_mode="Markdown",
+      )
+      return
+
   conn = sqlite3.connect("bot.db")
   c = conn.cursor()
   c.execute("UPDATE users SET balance = balance - ? WHERE id=?", (amount, user_id))
@@ -531,7 +529,6 @@ def withdraw_command(message):
   )
 
 
-# Temporary storage for selected deposit amounts
 user_deposit_amounts = {}
 
 
@@ -603,6 +600,7 @@ def handle_callback(call):
 ⚠️ **Important:**
 • Only send USDT on {network} network
 • Amount: {amount} USDT
+• Note: Capital & profits are lockable for 7 days per terms.
 
 When you have paid, click I have paid""",
         parse_mode="Markdown",
@@ -662,13 +660,15 @@ Your balance will be updated automatically once the admin approves your transact
 
     bot.answer_callback_query(
         call.id,
-        f"✅ Successfully invested ${amount}! You will get +20% in 24 hours.",
+        f"✅ Successfully invested ${amount}! Hourly profits started.",
         show_alert=True,
     )
     bot.send_message(
         call.message.chat.id,
         f"💎 **Investment Activated!**\n\nAmount: `${amount}`\nExpected Profit:"
-        f" `+${amount * 0.20:.2f}` (20%)\nDuration: `24 Hours`",
+        f" `+${amount * 0.20:.2f}` (20% in 24h)\n⏱️ ** Hourly Profit:** Added"
+        " every hour automatically!\n🛡️ **7 Days Lock:** Applies to principal &"
+        " earnings.",
         parse_mode="Markdown",
     )
 
@@ -677,13 +677,13 @@ Your balance will be updated automatically once the admin approves your transact
 @app.route("/")
 @app.route("/health")
 def health():
-  return "✅ USDTPilotBot is running 24/7!"
+  return "✅ USDTPilotBot is running 24/7 with Terms, Hourly Profits & 7-Day Lock!"
 
 
 if __name__ == "__main__":
   print(
-      "🚀 USDTPilotBot is starting with professional Deposit list & 'I have"
-      " paid' feature..."
+      "🚀 USDTPilotBot is starting with Banner, Terms, Hourly Profits & 7-Day"
+      " Lock feature..."
   )
 
   inv_thread = threading.Thread(target=check_investments, daemon=True)
