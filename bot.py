@@ -178,9 +178,9 @@ def get_active_deposit(user_id):
       "SELECT SUM(amount) FROM investments WHERE user_id=? AND status='ACTIVE'",
       (user_id,),
   )
-  total = c.fetchone()[0] or 0.00
+  result = c.fetchone()[0]
   conn.close()
-  return total
+  return result if result is not None else 0.00
 
 
 def add_request(user_id, req_type, amount, network):
@@ -298,7 +298,13 @@ def send_profile_card(chat_id, user_id, name, send_welcome_photo=False):
   user = get_user(user_id)
   balance = user[2] if user else 0.00
   active_deposit = get_active_deposit(user_id)
-  status = "No Deposit" if balance == 0 and active_deposit == 0 else "Active"
+  
+  # Status-ka hadda waa mid si sax ah u eegaya haddii balance ama active deposit uu jiro
+  if balance > 0 or active_deposit > 0:
+    status = "Active 🟢"
+  else:
+    status = "No Deposit"
+    
   current_time = datetime.now().strftime("%I:%M %p")
 
   text = f"""👤 **PROFILE & DASHBOARD**
@@ -763,6 +769,7 @@ Your balance will be updated automatically once the admin approves your transact
     conn.commit()
     conn.close()
 
+    # Balances-ka ayaa si toos ah loo update-gareeyay
     update_balance(target_user_id, amount)
     add_notification(
         target_user_id,
