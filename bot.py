@@ -18,8 +18,7 @@ BOT_TOKEN = "8626470350:AAFxJ3S5FjEjgBK-ySNAaKAZHvuOGRhLQ3A"
 ADMIN_ID = 7076265514
 ADMIN_PIN = "1234"
 
-# Halkan waxaad ku beddeshay linkiga banner-ka oo wata sawirkaaga cusub ee cajiibka ah
-WELCOME_BANNER = "HHALKAN_GELI_LINKIGA_SAWIRKA_NEW"  # Tusaale: haddii aad file_id haysato waxaad ku beddeli kartaa bot.send_photo(..., photo="FILE_ID")
+WELCOME_BANNER = "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?w=800&auto=format&fit=crop&q=60"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
@@ -300,6 +299,7 @@ def send_profile_card(chat_id, user_id, name, send_welcome_photo=False):
   balance = user[2] if user else 0.00
   active_deposit = get_active_deposit(user_id)
   
+  # Status-ka hadda waa mid si sax ah u eegaya haddii balance ama active deposit uu jiro
   if balance > 0 or active_deposit > 0:
     status = "Active 🟢"
   else:
@@ -318,19 +318,15 @@ def send_profile_card(chat_id, user_id, name, send_welcome_photo=False):
 🔓 Withdrawal Lock: 7 Days Policy Enforced 🛡️ ({current_time})"""
 
   if send_welcome_photo:
-    # Halkan waxaad si toos ah u isticmaali kartaa URL ama file_id-ka sawirkaaga cusub
-    try:
-      bot.send_photo(
-          chat_id,
-          WELCOME_BANNER,
-          caption=(
-              "🚀 **Welcome to USDTPilotBot!**\n\nInvest & earn 20% profit in"
-              " 24 hours with hourly updates."
-          ),
-          parse_mode="Markdown",
-      )
-    except Exception as e:
-      print(f"Error sending banner photo: {e}")
+    bot.send_photo(
+        chat_id,
+        WELCOME_BANNER,
+        caption=(
+            "🚀 **Welcome to USDTPilotBot!**\n\nInvest & earn 20% profit in"
+            " 24 hours with hourly updates."
+        ),
+        parse_mode="Markdown",
+    )
 
   bot.send_message(
       chat_id,
@@ -754,6 +750,7 @@ Your balance will be updated automatically once the admin approves your transact
         parse_mode="Markdown",
     )
 
+  # ========== ADMIN ACTION HANDLERS (APPROVE / REJECT) ==========
   elif data.startswith("adm_app_"):
     if user_id != ADMIN_ID:
       bot.answer_callback_query(call.id, "❌ Unauthorized action!", show_alert=True)
@@ -772,6 +769,7 @@ Your balance will be updated automatically once the admin approves your transact
     conn.commit()
     conn.close()
 
+    # Balances-ka ayaa si toos ah loo update-gareeyay
     update_balance(target_user_id, amount)
     add_notification(
         target_user_id,
