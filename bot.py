@@ -397,7 +397,7 @@ def handle_reply_menu(message):
     )
 
   elif text == "💎 Investment":
-    # ── QAYBTA INVESTMENT-KA OO LA QURXIYAY (PROFESSIONAL EMOJIS & LAYOUT) ──
+    # ── QAYBTA INVESTMENT-KA OO LA HAGAajiyay (10$ - 100$) ──
     markup = InlineKeyboardMarkup(row_width=2)
     amounts = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     buttons = []
@@ -405,23 +405,23 @@ def handle_reply_menu(message):
       profit_amt = amt * 0.20
       buttons.append(
           InlineKeyboardButton(
-              f"💎 ${amt} USDT ➔ +${profit_amt:.1f} Profit",
+              f"💎 ${amt} ➔ +${profit_amt:.1f} Profit",
               callback_data=f"invest_{amt}",
           )
       )
     markup.add(*buttons)
 
-    invest_menu_text = """💎 **PROFESSIONAL INVESTMENT CENTER**
+    user = get_user(user_id)
+    user_bal = user[2] if user else 0.00
+
+    invest_menu_text = f"""💎 **PROFESSIONAL INVESTMENT CENTER**
 
 Grow your capital securely with our automated hourly profit system.
 
-📊 **Plan Overview:**
-• **Return Rate:** `+20% Total Profit`
-• **Duration:** `24 Hours Cycle`
-• **Profit Distribution:** `Added Every Hour Automatically ⏱️`
-• **Security Lock:** `7 Days Policy Enforced 🛡️`
+💰 **Your Current Balance:** `{user_bal:.2f} USDT`
+📊 **Plan Overview:** `+20% Profit in 24 Hours (Hourly Payouts ⏱️)`
 
-👇 **Select your investment amount below to start earning instantly:**"""
+👇 **Select your investment package below to purchase instantly:**"""
 
     bot.send_message(
         message.chat.id,
@@ -701,14 +701,16 @@ Your balance will be updated automatically once the admin approves your transact
     user = get_user(user_id)
     balance = user[2] if user else 0.00
 
+    # Hubinta haddii uu haysato lacag ku filan si toos ah loogu iibsado
     if balance < amount:
       bot.answer_callback_query(
           call.id,
-          "❌ Insufficient balance! Please deposit first.",
+          f"❌ Insufficient balance! You need ${amount}, but have ${balance:.2f}.",
           show_alert=True,
       )
       return
 
+    # Si toos ah (Automatically) uga jar balankiisa kana diiwaangeli Investment-ka
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
     c.execute(
@@ -724,12 +726,12 @@ Your balance will be updated automatically once the admin approves your transact
 
     bot.answer_callback_query(
         call.id,
-        f"✅ Successfully invested ${amount}! Hourly profits started.",
+        f"✅ Successfully invested ${amount} automatically!",
         show_alert=True,
     )
     bot.send_message(
         call.message.chat.id,
-        f"""🚀 **INVESTMENT SUCCESSFULLY ACTIVATED!**
+        f"""🚀 **AUTOMATIC INVESTMENT ACTIVATED!**
 
 💵 **Invested Amount:** `${amount:.2f} USDT`
 📈 **Total Expected Profit:** `+${amount * 0.20:.2f} USDT` (20%)
@@ -737,7 +739,7 @@ Your balance will be updated automatically once the admin approves your transact
 ⏳ **Duration:** `24 Hours Cycle`
 🛡️ **Security Policy:** `7 Days Lock (Applies to Principal & Profit)`
 
-Your earnings are now growing automatically!""",
+Your investment is now live and growing automatically!""",
         parse_mode="Markdown",
     )
 
@@ -746,13 +748,16 @@ Your earnings are now growing automatically!""",
 @app.route("/")
 @app.route("/health")
 def health():
-  return "✅ USDTPilotBot is running 24/7 with Professional Investment & Live History!"
+  return (
+      "✅ USDTPilotBot is running 24/7 with Instant Auto-Investment & Clean"
+      " UI!"
+  )
 
 
 if __name__ == "__main__":
   print(
-      "🚀 USDTPilotBot is starting with Professional Investment Menu, Live"
-      " History & Banner..."
+      "🚀 USDTPilotBot is starting with Instant Auto-Investment, Clean UI &"
+      " Banner..."
   )
 
   inv_thread = threading.Thread(target=check_investments, daemon=True)
