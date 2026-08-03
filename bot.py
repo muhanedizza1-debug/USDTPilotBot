@@ -20,7 +20,6 @@ def init_db():
     conn = sqlite3.connect('bot.db')
     c = conn.cursor()
     
-    # Users table
     c.execute('''CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY,
         username TEXT,
@@ -29,7 +28,6 @@ def init_db():
         registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
     
-    # Transactions table
     c.execute('''CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
@@ -40,13 +38,11 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
     
-    # Settings table
     c.execute('''CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT
     )''')
     
-    # Notifications table
     c.execute('''CREATE TABLE IF NOT EXISTS notifications (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
@@ -56,7 +52,6 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
     
-    # Default settings
     default_settings = {
         'bonus_amount': '1.0',
         'min_deposit': '10',
@@ -187,7 +182,6 @@ def get_referral_count(user_id):
     conn.close()
     return total
 
-# ========== TRANSACTION FUNCTIONS ==========
 def add_request(user_id, req_type, amount, network):
     conn = sqlite3.connect('bot.db')
     c = conn.cursor()
@@ -294,7 +288,6 @@ def get_transactions_by_status(status):
     conn.close()
     return total
 
-# ========== NOTIFICATION FUNCTIONS ==========
 def add_notification(user_id, message, type="INFO"):
     conn = sqlite3.connect('bot.db')
     c = conn.cursor()
@@ -337,7 +330,6 @@ def get_unread_count(user_id):
     conn.close()
     return count
 
-# ========== ADMIN SESSIONS ==========
 admin_sessions = {}
 
 def is_admin_logged_in(user_id):
@@ -350,7 +342,6 @@ def admin_logout(user_id):
     if user_id in admin_sessions:
         del admin_sessions[user_id]
 
-# ========== REPORTS ==========
 def get_daily_report(date=None):
     conn = sqlite3.connect('bot.db')
     c = conn.cursor()
@@ -432,7 +423,6 @@ def get_admin_stats():
         'total_rejected': get_transactions_by_status('REJECTED')
     }
 
-# ========== KEYBOARDS ==========
 def main_menu():
     from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
     markup = InlineKeyboardMarkup(row_width=2)
@@ -915,7 +905,6 @@ def handle_callback(call):
         bot.answer_callback_query(call.id, "🔧 Bot is under maintenance")
         return
     
-    # ===== USER FEATURES =====
     if data == "wallet":
         user = get_user(user_id)
         if user:
@@ -1112,7 +1101,6 @@ Share your link and earn!
             reply_markup=main_menu()
         )
     
-    # ===== ADMIN FEATURES =====
     elif data.startswith("admin_"):
         if user_id != ADMIN_ID or not is_admin_logged_in(user_id):
             bot.answer_callback_query(call.id, "❌ Unauthorized")
@@ -1132,7 +1120,7 @@ Share your link and earn!
                     text += f"   🌐 {r[5]} | 📅 {r[6][:16]}\n\n"
             
             from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-            markup = InlineKeyboardMarkup(row_width=1)
+            markup = InlineKeyboardMarkup(row_width=2)
             for r in pending[:5]:
                 markup.add(
                     InlineKeyboardButton(f"✅ Approve {r[0]}", callback_data=f"approve_{r[0]}"),
@@ -1287,7 +1275,6 @@ Commands: /daily, /weekly, /top
             bot.answer_callback_query(call.id, "🏆 Top users sent")
             bot.send_message(user_id, text, parse_mode='Markdown')
     
-    # ===== APPROVE/REJECT =====
     elif data.startswith("approve_") or data.startswith("reject_"):
         if user_id != ADMIN_ID or not is_admin_logged_in(user_id):
             bot.answer_callback_query(call.id, "❌ Unauthorized")
@@ -1301,7 +1288,6 @@ Commands: /daily, /weekly, /top
         update_transaction(tx_id, status)
         bot.answer_callback_query(call.id, f"✅ Transaction #{tx_id} {status}")
         
-        # Refresh pending list
         pending = get_pending_with_users()
         if pending:
             text = f"📋 **Pending Requests:** {len(pending)}\n\n"
@@ -1312,7 +1298,7 @@ Commands: /daily, /weekly, /top
             text = "✅ No pending requests"
         
         from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-        markup = InlineKeyboardMarkup(row_width=1)
+        markup = InlineKeyboardMarkup(row_width=2)
         for r in pending[:5]:
             markup.add(
                 InlineKeyboardButton(f"✅ Approve {r[0]}", callback_data=f"approve_{r[0]}"),
