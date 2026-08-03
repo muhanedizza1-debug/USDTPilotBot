@@ -18,8 +18,7 @@ BOT_TOKEN = "8626470350:AAFxJ3S5FjEjgBK-ySNAaKAZHvuOGRhLQ3A"
 ADMIN_ID = 7076265514
 ADMIN_PIN = "1234"
 
-# Halkan waxaad ku beddeshay linkiga banner-ka oo wata sawirkaaga cusub ee cajiibka ah
-WELCOME_BANNER = "HHALKAN_GELI_LINKIGA_SAWIRKA_NEW"  # Tusaale: haddii aad file_id haysato waxaad ku beddeli kartaa bot.send_photo(..., photo="FILE_ID")
+WELCOME_BANNER = "HHALKAN_GELI_LINKIGA_SAWIRKA_NEW"  # Beddel haddii aad sawir leedahay
 
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
@@ -98,7 +97,7 @@ init_db()
 
 
 # ========== REPLY KEYBOARD ==========
-def get_main_reply_keyboard():
+def get_main_reply_keyboard(user_id=None):
   markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
   btn_profile = KeyboardButton("👤 My Profile")
   btn_deposit = KeyboardButton("💳 Deposit")
@@ -113,6 +112,12 @@ def get_main_reply_keyboard():
   markup.add(btn_investment, btn_withdraw)
   markup.add(btn_history, btn_referral)
   markup.add(btn_terms, btn_support)
+
+  # Haddii uu yahay Admin, waxaa u soo baxaya badhanka Admin Panel
+  if user_id == ADMIN_ID:
+    btn_admin = KeyboardButton("🔐 Admin Panel")
+    markup.add(btn_admin)
+
   return markup
 
 
@@ -299,12 +304,12 @@ def send_profile_card(chat_id, user_id, name, send_welcome_photo=False):
   user = get_user(user_id)
   balance = user[2] if user else 0.00
   active_deposit = get_active_deposit(user_id)
-  
+
   if balance > 0 or active_deposit > 0:
     status = "Active 🟢"
   else:
     status = "No Deposit"
-    
+
   current_time = datetime.now().strftime("%I:%M %p")
 
   text = f"""👤 **PROFILE & DASHBOARD**
@@ -335,7 +340,7 @@ def send_profile_card(chat_id, user_id, name, send_welcome_photo=False):
       chat_id,
       text,
       parse_mode="Markdown",
-      reply_markup=get_main_reply_keyboard(),
+      reply_markup=get_main_reply_keyboard(user_id),
   )
 
 
@@ -379,6 +384,7 @@ def generate_history_text(user_id):
         "🎁 Referral",
         "📜 Terms",
         "🛠️ Support",
+        "🔐 Admin Panel",
     ]
 )
 def handle_reply_menu(message):
@@ -505,9 +511,114 @@ By using USDTPilotBot, you agree to abide by these rules and conditions."""
   elif text == "🛠️ Support":
     bot.send_message(
         message.chat.id,
-        "🛠️ **Support**\n\nFor any issues or questions, contact admin: @USDTPilotBotsupport12",
+        "🛠️ **Support**\n\nFor any issues or questions, contact admin.",
         parse_mode="Markdown",
     )
+
+  elif text == "🔐 Admin Panel":
+    if user_id != ADMIN_ID:
+      return
+
+    conn = sqlite3.connect("bot.db")
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM users")
+    total_users = c.fetchone()[0]
+
+    c.execute("SELECT SUM(balance) FROM users")
+    total_balances = c.fetchone()[0] or 0.0
+
+    c.execute("SELECT SUM(amount) FROM investments WHERE status='ACTIVE'")
+    total_active_investments = c.fetchone()[0] or 0.0
+    conn.close()
+
+    admin_panel_text = f"""🔐 **ADMIN CONTROL PANEL**
+
+📊 **Bot Statistics:**
+• 👥 **Total Users:** `{total_users}`
+• 💰 **Total User Balances:** `${total_balances:.2f} USDT`
+• 💎 **Total Active Investments:** `${total_active_investments:.2f} USDT`
+
+⚙️ **Quick Admin Actions:**
+Use `/broadcast [fariin]` to send message to all users."""
+
+    markup = InlineKeyboardMarkup()
+    markup.add(
+        InlineKeyboardButton(
+            "📢 Send Broadcast", callback_data="admin_broadcast_prompt"
+        )
+    )
+    bot.send_message(
+        message.chat.id,
+        admin_panel_text,
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+
+@bot.message_handler(commands=["admin"])
+def admin_command(message):
+  if message.from_user.id != ADMIN_ID:
+    bot.reply_to(message, "❌ Unauthorized!")
+    return
+
+  conn = sqlite3.connect("bot.db")
+  c = conn.cursor()
+  c.execute("SELECT COUNT(*) FROM users")
+  total_users = c.fetchone()[0]
+  conn.close()
+
+  bot.reply_to(
+      message,
+      f"🔐 **Admin Dashboard**\nTotal Users in Bot: `{total_users}`",
+      parse_mode="Markdown",
+  )
+
+
+@bot.message_handler(commands=["broadcast"])
+def broadcast_command(message):
+  if message.from_user.id != ADMIN_ID:
+    bot.reply_to(message, "❌ Unauthorized!")
+    return
+
+  parts = message.text.split(maxsplit=1)
+  if len(parts) < 2:
+    bot.reply_to(
+        message,
+        "⚠️ Fadlan soo raaci fariinta aadire.\nTusaale: `/broadcast Hello"
+        " everyone!`",
+    )
+    return
+
+  bc_message = parts[1]
+
+  conn = sqlite3.connect("bot.db")
+  c = conn.cursor()
+  c.execute("SELECT id FROM users")
+  users = c.fetchall()
+  conn.close()
+
+  sent_count = 0
+  failed_count = 0
+
+  for u in users:
+    uid = u[0]
+    try:
+      bot.send_message(
+          uid,
+          f"📢 **ANNOUNCEMENT**\n\n{bc_message}",
+          parse_mode="Markdown",
+      )
+      sent_count += 1
+      time.sleep(0.1)  # Si aanay Telegram API-gu u xidhin (flood control)
+    except Exception:
+      failed_count += 1
+
+  bot.reply_to(
+      message,
+      f"✅ **Broadcast Completed!**\n\n• Sent: `{sent_count}`\n• Failed:"
+      f" `{failed_count}`",
+      parse_mode="Markdown",
+  )
 
 
 @bot.message_handler(commands=["withdraw"])
@@ -593,7 +704,18 @@ def handle_callback(call):
   user_id = call.from_user.id
   data = call.data
 
-  if data == "refresh_history":
+  if data == "admin_broadcast_prompt":
+    if user_id != ADMIN_ID:
+      return
+    bot.answer_callback_query(call.id)
+    bot.send_message(
+        call.message.chat.id,
+        "💡 **How to Broadcast:**\nSend your message using this format:\n👉"
+        " `/broadcast Fariintaada halkan soo geli`",
+        parse_mode="Markdown",
+    )
+
+  elif data == "refresh_history":
     markup = InlineKeyboardMarkup()
     markup.add(
         InlineKeyboardButton("🔄 Refresh History", callback_data="refresh_history")
@@ -897,15 +1019,15 @@ Your investment is now live and growing automatically!""",
 @app.route("/health")
 def health():
   return (
-      "✅ USDTPilotBot is running 24/7 with Instant Auto-Investment & Clean"
-      " UI!"
+      "✅ USDTPilotBot is running 24/7 with Instant Auto-Investment & Admin"
+      " Panel!"
   )
 
 
 if __name__ == "__main__":
   print(
-      "🚀 USDTPilotBot is starting with Instant Auto-Investment, Clean UI &"
-      " Banner..."
+      "🚀 USDTPilotBot is starting with Instant Auto-Investment, Admin Panel &"
+      " Broadcast..."
   )
 
   inv_thread = threading.Thread(target=check_investments, daemon=True)
