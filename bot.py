@@ -56,12 +56,6 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
     
-    # Admin sessions
-    c.execute('''CREATE TABLE IF NOT EXISTS admin_sessions (
-        user_id INTEGER PRIMARY KEY,
-        logged_in INTEGER DEFAULT 0
-    )''')
-    
     # Default settings
     default_settings = {
         'bonus_amount': '1.0',
@@ -70,7 +64,9 @@ def init_db():
         'min_withdraw': '10',
         'max_withdraw': '10000',
         'referral_bonus': '0.5',
-        'maintenance_mode': 'false'
+        'maintenance_mode': 'false',
+        'welcome_message': 'Welcome to USDTPilotBot! 🚀',
+        'currency': 'USDT'
     }
     
     for key, value in default_settings.items():
@@ -183,6 +179,14 @@ def get_today_users():
     conn.close()
     return total
 
+def get_referral_count(user_id):
+    conn = sqlite3.connect('bot.db')
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM users WHERE referred_by=?", (user_id,))
+    total = c.fetchone()[0]
+    conn.close()
+    return total
+
 # ========== TRANSACTION FUNCTIONS ==========
 def add_request(user_id, req_type, amount, network):
     conn = sqlite3.connect('bot.db')
@@ -191,11 +195,12 @@ def add_request(user_id, req_type, amount, network):
               (user_id, req_type, amount, "PENDING", network))
     conn.commit()
     conn.close()
+    add_notification(user_id, f"📝 {req_type} request of {amount} USDT submitted. Waiting for admin approval.", "INFO")
 
 def get_pending():
     conn = sqlite3.connect('bot.db')
     c = conn.cursor()
-    c.execute("SELECT * FROM transactions WHERE status='PENDING'")
+    c.execute("SELECT * FROM transactions WHERE status='PENDING' ORDER BY created_at DESC")
     return c.fetchall()
 
 def get_pending_with_users():
@@ -221,11 +226,22 @@ def update_transaction(tx_id, status):
     if status == "APPROVED":
         conn = sqlite3.connect('bot.db')
         c = conn.cursor()
-        c.execute("SELECT user_id, amount FROM transactions WHERE id=?", (tx_id,))
+        c.execute("SELECT user_id, amount, type FROM transactions WHERE id=?", (tx_id,))
         tx = c.fetchone()
         if tx:
-            update_balance(tx[0], tx[1])
-            add_notification(tx[0], f"✅ Your {tx[1]} USDT transaction has been approved!", "SUCCESS")
+            if tx[2] == "DEPOSIT":
+                update_balance(tx[0], tx[1])
+                add_notification(tx[0], f"✅ Deposit of {tx[1]} USDT approved! Balance updated.", "SUCCESS")
+            elif tx[2] == "WITHDRAW":
+                add_notification(tx[0], f"✅ Withdraw of {tx[1]} USDT approved!", "SUCCESS")
+        conn.close()
+    elif status == "REJECTED":
+        conn = sqlite3.connect('bot.db')
+        c = conn.cursor()
+        c.execute("SELECT user_id, amount, type FROM transactions WHERE id=?", (tx_id,))
+        tx = c.fetchone()
+        if tx:
+            add_notification(tx[0], f"❌ {tx[2]} of {tx[1]} USDT rejected.", "WARNING")
         conn.close()
 
 def get_transaction_history(user_id, limit=20):
@@ -267,6 +283,14 @@ def get_withdraw_total():
     c = conn.cursor()
     c.execute("SELECT SUM(amount) FROM transactions WHERE type='WITHDRAW' AND status='APPROVED'")
     total = c.fetchone()[0] or 0
+    conn.close()
+    return total
+
+def get_transactions_by_status(status):
+    conn = sqlite3.connect('bot.db')
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM transactions WHERE status=?", (status,))
+    total = c.fetchone()[0]
     conn.close()
     return total
 
@@ -404,17 +428,9 @@ def get_admin_stats():
         'total_deposits': int(get_deposit_total()),
         'total_withdraws': int(get_withdraw_total()),
         'total_pending': len(get_pending()),
-        'total_approved': len(get_all_transactions_by_status('APPROVED')),
-        'total_rejected': len(get_all_transactions_by_status('REJECTED'))
+        'total_approved': get_transactions_by_status('APPROVED'),
+        'total_rejected': get_transactions_by_status('REJECTED')
     }
-
-def get_all_transactions_by_status(status):
-    conn = sqlite3.connect('bot.db')
-    c = conn.cursor()
-    c.execute("SELECT * FROM transactions WHERE status=?", (status,))
-    data = c.fetchall()
-    conn.close()
-    return data
 
 # ========== KEYBOARDS ==========
 def main_menu():
@@ -463,24 +479,30 @@ def start(message):
     user_id = message.from_user.id
     username = message.from_user.username or "User"
     
-    # Check referral
+    if get_setting('maintenance_mode') == 'true' and user_id != ADMIN_ID:
+        bot.reply_to(message, "🔧 Bot is under maintenance. Please try again later.")
+        return
+    
     referred_by = 0
     if message.text and ' ' in message.text:
         try:
             referred_by = int(message.text.split()[1])
+            if referred_by == user_id:
+                referred_by = 0
         except:
             pass
     
     add_user(user_id, username, referred_by)
     
+    welcome = get_setting('welcome_message') or "Welcome to USDTPilotBot! 🚀"
     bot.reply_to(
         message,
         f"""
-🤖 **Welcome to USDTPilotBot!**
+🤖 **USDTPilotBot**
 
-Hello @{username}!
+{welcome}
 
-💰 Your balance: 0.00 USDT
+💰 Balance: 0.00 USDT
 
 Choose service below:
 """,
@@ -532,6 +554,10 @@ def admin_logout_command(message):
 @bot.message_handler(commands=['deposit_amount'])
 def deposit_amount(message):
     user_id = message.from_user.id
+    if get_setting('maintenance_mode') == 'true':
+        bot.reply_to(message, "🔧 Bot is under maintenance.")
+        return
+    
     try:
         amount = float(message.text.split()[1])
         if amount <= 0:
@@ -565,6 +591,10 @@ Admin will approve.
 @bot.message_handler(commands=['withdraw'])
 def withdraw_command(message):
     user_id = message.from_user.id
+    if get_setting('maintenance_mode') == 'true':
+        bot.reply_to(message, "🔧 Bot is under maintenance.")
+        return
+    
     try:
         amount = float(message.text.split()[1])
         if amount <= 0:
@@ -620,9 +650,9 @@ def broadcast_command(message):
     sent = 0
     for u in users:
         try:
-            bot.send_message(u[0], msg)
+            bot.send_message(u[0], f"📢 {msg}")
             sent += 1
-            time.sleep(0.1)
+            time.sleep(0.05)
         except:
             pass
     
@@ -770,7 +800,7 @@ def set_command(message):
         return
     
     key = args[1]
-    value = args[2]
+    value = " ".join(args[2:])
     update_setting(key, value)
     bot.reply_to(message, f"✅ {key} updated to: {value}")
 
@@ -830,7 +860,7 @@ def info_command(message):
 🌍 **Languages:** English
 🛡️ **Security:** PIN + Anti-Spam
 
-💡 **Commands:** /start
+💡 **Commands:** /help
 """
     bot.reply_to(message, text, parse_mode='Markdown')
 
@@ -861,17 +891,16 @@ def help_command(message):
 /admin - Dashboard
 /adminpin 1234 - Login
 /adminlogout - Logout
-/chart - Charts
 /daily - Daily report
 /weekly - Weekly report
 /top - Top users
 /search - Search user
 /deleteuser - Delete user
 /settings - System settings
-/set - Update setting
+/set key value - Update setting
 /backup - Backup database
-/maintenance - Maintenance mode
-/broadcast - Send message
+/maintenance on/off - Maintenance mode
+/broadcast msg - Send message
 """ if is_admin else ""}
 """
     bot.reply_to(message, text, parse_mode='Markdown')
@@ -882,7 +911,6 @@ def handle_callback(call):
     user_id = call.from_user.id
     data = call.data
     
-    # Check maintenance mode
     if get_setting('maintenance_mode') == 'true' and user_id != ADMIN_ID:
         bot.answer_callback_query(call.id, "🔧 Bot is under maintenance")
         return
@@ -909,6 +937,7 @@ def handle_callback(call):
     elif data == "profile":
         user = get_user(user_id)
         if user:
+            referrals = get_referral_count(user_id)
             bot.edit_message_text(
                 f"""
 👤 **Your Profile**
@@ -917,6 +946,7 @@ def handle_callback(call):
 👤 Username: @{user[1] or 'No username'}
 💰 Balance: `{user[2]:.2f}` USDT
 📅 Registered: {user[4] or 'N/A'}
+👥 Referrals: {referrals}
 
 Status: 🟢 Active
 """,
@@ -971,15 +1001,16 @@ Max: {get_setting('max_withdraw')} USDT
     elif data == "bonus":
         bonus_amount = float(get_setting('bonus_amount') or 1.0)
         update_balance(user_id, bonus_amount)
+        user = get_user(user_id)
         bot.edit_message_text(
             f"""
 🎁 **Daily Bonus**
 
 ✅ Received: `{bonus_amount:.2f}` USDT
 
-💰 New Balance: Coming soon!
+💰 New Balance: `{user[2]:.2f}` USDT
 
-📌 Bonus daily demo
+📌 Come back tomorrow for more!
 """,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -990,6 +1021,8 @@ Max: {get_setting('max_withdraw')} USDT
     elif data == "referral":
         bot_username = bot.get_me().username
         link = f"https://t.me/{bot_username}?start={user_id}"
+        referrals = get_referral_count(user_id)
+        bonus = get_setting('referral_bonus') or 0.5
         bot.edit_message_text(
             f"""
 👥 **Referral System**
@@ -997,9 +1030,11 @@ Max: {get_setting('max_withdraw')} USDT
 🔗 Your link:
 `{link}`
 
-🎁 Bonus: {get_setting('referral_bonus')} USDT per referral
+🎁 Bonus: {bonus} USDT per referral
 
-📊 Total referrals: Coming soon!
+👥 Total referrals: {referrals}
+
+Share your link and earn!
 """,
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
@@ -1018,7 +1053,7 @@ Max: {get_setting('max_withdraw')} USDT
                 text += f"{status_emoji} **{tx[0]}**\n"
                 text += f"   Amount: {tx[1]:.2f} USDT\n"
                 text += f"   Status: {tx[2]}\n"
-                text += f"   Date: {tx[4]}\n\n"
+                text += f"   Date: {tx[4][:16]}\n\n"
         
         bot.edit_message_text(
             text,
@@ -1098,6 +1133,11 @@ Max: {get_setting('max_withdraw')} USDT
             
             from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
             markup = InlineKeyboardMarkup(row_width=1)
+            for r in pending[:5]:
+                markup.add(
+                    InlineKeyboardButton(f"✅ Approve {r[0]}", callback_data=f"approve_{r[0]}"),
+                    InlineKeyboardButton(f"❌ Reject {r[0]}", callback_data=f"reject_{r[0]}")
+                )
             markup.add(InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_back"))
             
             bot.edit_message_text(
@@ -1260,10 +1300,32 @@ Commands: /daily, /weekly, /top
         status = "APPROVED" if action == "approve" else "REJECTED"
         update_transaction(tx_id, status)
         bot.answer_callback_query(call.id, f"✅ Transaction #{tx_id} {status}")
+        
+        # Refresh pending list
+        pending = get_pending_with_users()
+        if pending:
+            text = f"📋 **Pending Requests:** {len(pending)}\n\n"
+            for r in pending[:10]:
+                text += f"🆔 `{r[0]}` | @{r[2] or r[1]} | {r[3]} | {r[4]:.2f} USDT\n"
+                text += f"   🌐 {r[5]} | 📅 {r[6][:16]}\n\n"
+        else:
+            text = "✅ No pending requests"
+        
+        from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+        markup = InlineKeyboardMarkup(row_width=1)
+        for r in pending[:5]:
+            markup.add(
+                InlineKeyboardButton(f"✅ Approve {r[0]}", callback_data=f"approve_{r[0]}"),
+                InlineKeyboardButton(f"❌ Reject {r[0]}", callback_data=f"reject_{r[0]}")
+            )
+        markup.add(InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_back"))
+        
         bot.edit_message_text(
-            f"✅ Transaction #{tx_id} {status}",
+            text,
             chat_id=call.message.chat.id,
-            message_id=call.message.message_id
+            message_id=call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=markup
         )
     
     else:
@@ -1294,30 +1356,7 @@ def show_admin_dashboard(message):
 📋 **Pending Requests:** {len(pending)}
 """
     
-    if pending:
-        for r in pending[:3]:
-            text += f"\n🆔 `{r[0]}` | @{r[2] or r[1]} | {r[3]} | {r[4]:.2f} USDT"
-            from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-            markup = InlineKeyboardMarkup(row_width=2)
-            markup.add(
-                InlineKeyboardButton(f"✅ Approve {r[0]}", callback_data=f"approve_{r[0]}"),
-                InlineKeyboardButton(f"❌ Reject {r[0]}", callback_data=f"reject_{r[0]}")
-            )
-            bot.reply_to(message, text, parse_mode='Markdown', reply_markup=markup)
-            return
-    
-    from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-    markup = InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        InlineKeyboardButton("📊 Dashboard", callback_data="admin_dashboard"),
-        InlineKeyboardButton("📋 Pending", callback_data="admin_pending"),
-        InlineKeyboardButton("📈 Reports", callback_data="admin_reports"),
-        InlineKeyboardButton("👥 Users", callback_data="admin_users"),
-        InlineKeyboardButton("⚙️ Settings", callback_data="admin_settings"),
-        InlineKeyboardButton("🔒 Logout", callback_data="admin_logout")
-    )
-    
-    bot.reply_to(message, text, parse_mode='Markdown', reply_markup=markup)
+    bot.reply_to(message, text, parse_mode='Markdown', reply_markup=admin_menu())
 
 def show_admin_dashboard_callback(call):
     stats = get_admin_stats()
@@ -1343,23 +1382,12 @@ def show_admin_dashboard_callback(call):
 📋 **Pending Requests:** {len(pending)}
 """
     
-    from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-    markup = InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        InlineKeyboardButton("📊 Dashboard", callback_data="admin_dashboard"),
-        InlineKeyboardButton("📋 Pending", callback_data="admin_pending"),
-        InlineKeyboardButton("📈 Reports", callback_data="admin_reports"),
-        InlineKeyboardButton("👥 Users", callback_data="admin_users"),
-        InlineKeyboardButton("⚙️ Settings", callback_data="admin_settings"),
-        InlineKeyboardButton("🔒 Logout", callback_data="admin_logout")
-    )
-    
     bot.edit_message_text(
         text,
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
         parse_mode='Markdown',
-        reply_markup=markup
+        reply_markup=admin_menu()
     )
 
 # ========== FLASK SERVER ==========
@@ -1378,13 +1406,6 @@ def status():
         'pending': stats['total_pending']
     })
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    json_str = request.get_data().decode('UTF-8')
-    update = telebot.types.Update.de_json(json_str)
-    bot.process_new_updates([update])
-    return "OK", 200
-
 # ========== START ==========
 if __name__ == "__main__":
     print("🚀 USDTPilotBot is starting...")
@@ -1392,10 +1413,8 @@ if __name__ == "__main__":
     print(f"🤖 Bot: @USDTPilotBot")
     print(f"👤 Admin ID: {ADMIN_ID}")
     
-    # Start bot in background thread
     thread = threading.Thread(target=bot.infinity_polling, daemon=True)
     thread.start()
     
-    # Start Flask server
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
