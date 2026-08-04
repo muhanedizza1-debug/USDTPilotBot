@@ -972,12 +972,12 @@ We are pleased to inform you that your deposit of **${amount:.2f} USDT** has bee
     )
     bot.answer_callback_query(call.id, "❌ Deposit Rejected.")
 
-    user_reject_msg = f"""❌ **Deposit Request Declined** 🚫
+    user_reject_msg = f"""❌ Deposit Request Declined 🚫
 
 Dear Valued User,
-We regret to inform you that your deposit request for **${amount:.2f} USDT** could not be verified or approved at this time. ⚠️
+We regret to inform you that your deposit request for ${amount:.2f} USDT could not be verified or approved at this time. ⚠️
 
-🔍 **Possible Reasons:**
+🔍 Possible Reasons:
 • Incorrect transaction hash or network. 🌐
 • The exact transferred amount did not match. 💵
 • Payment was not received on our network address. ❌
@@ -986,7 +986,7 @@ If you believe this is an error or have completed the payment correctly, please 
     try:
       bot.send_message(target_user_id, user_reject_msg, parse_mode="Markdown")
     except Exception as e:
-      print(f"Error notifying user: {e}")
+      print(f"Error notifying user about rejection: {e}")
 
   # ========== ADMIN WITHDRAWAL ACTION HANDLERS ==========
   elif data.startswith("adm_wd_app_"):
