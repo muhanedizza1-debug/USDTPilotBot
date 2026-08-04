@@ -483,18 +483,15 @@ Grow your capital securely with our automated 7-day hourly profit system.
     if active_inv:
       invest_time = datetime.strptime(active_inv[0], "%Y-%m-%d %H:%M:%S")
       if datetime.now() < invest_time + timedelta(days=7):
-        remaining = (invest_time + timedelta(days=7)) - datetime.now()
-        days_left = remaining.days
-        hours_left = remaining.seconds // 3600
+        lock_msg = """💰 **Withdrawal Information**
 
-        lock_msg = f"""❌ **Withdrawal Temporarily Locked**
+🔒 Your balance is temporarily locked for withdrawal.
 
-🛡️ Waxaa kuu socda maalgashi (Investment) shaqaynaya. Sida ku xusan shuruudahayaga, lacagtaada lama bixi karo ilaa ay ka dhammaato muddada **7-da maalmood** ah oo ay faa'iidadaadu oo dhan si buuxda ugu soo dhacdo main balance-kaaga.
+⏰ Please wait 7 days from the date your balance was credited.
 
-⏳ **Waqtiga ka dhiman:** 
-• `{days_left} Maalmood iyo {hours_left} Saacadood`
+✅ After the 7-day period, your withdrawal will be unlocked, and you can withdraw your funds normally. 💸
 
-Fadlan sug inta uu wareeggu ka dhammaanayo."""
+✨ Thank you for choosing our platform!"""
         bot.send_message(message.chat.id, lock_msg, parse_mode="Markdown")
         return
 
