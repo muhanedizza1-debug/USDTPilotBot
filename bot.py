@@ -79,7 +79,7 @@ def init_db():
       "max_withdraw": "10000",
       "referral_bonus": "0.5",
       "maintenance_mode": "false",
-      "welcome_message": "Welcome to USDTPilotBot! 🚀 Invest & earn profit for 7 days.",
+      "welcome_message": "Welcome to USDTPilotBot! 🚀 Invest & earn profit.",
       "currency": "USDT",
   }
 
@@ -189,8 +189,7 @@ def add_request(user_id, req_type, amount, network):
   conn = sqlite3.connect("bot.db")
   c = conn.cursor()
   c.execute(
-      "INSERT INTO transactions (user_id, type, amount, status, network) VALUES"
-      " (?, ?, ?, ?, ?)",
+      "INSERT INTO transactions (user_id, type, amount, status, network) VALUES (?, ?, ?, ?, ?)",
       (user_id, req_type, amount, "PENDING", network),
   )
   tx_id = c.lastrowid
@@ -198,8 +197,7 @@ def add_request(user_id, req_type, amount, network):
   conn.close()
   add_notification(
       user_id,
-      f"📝 {req_type} request of {amount} USDT submitted. Waiting for admin"
-      " approval.",
+      f"📝 {req_type} request of {amount} USDT submitted. Waiting for admin approval.",
       "INFO",
   )
   return tx_id
@@ -240,20 +238,19 @@ def check_investments():
       conn = sqlite3.connect("bot.db")
       c = conn.cursor()
 
-      # Faa'iidada saacadiiba marso (20% wadarta guud ee 7-da maalmood oo loo qaybiyay saacadaha)
+      # Faa'iidada saacadiiba marso
       c.execute("SELECT id, user_id, amount, profit FROM investments WHERE status='ACTIVE'")
       active_investments = c.fetchall()
 
       for inv in active_investments:
         inv_id, user_id, amount, total_profit = inv
-        # Wadarta faa'iidada 7-da maalmood waa (amount * 0.20 * 7 ama intii la rabo, halkaan waxaa loo xisaabiyay saacad walba)
         hourly_profit = (total_profit / (7 * 24))
         update_balance(user_id, hourly_profit)
 
-      # Hubinta maalgashiyada dhammaystay 7-da maalmood (168 saacadood)
+      # Hubinta maalgashiyada dhammaystay 5 daqiiqo (Updated to 5 minutes check)
       c.execute("""
                 SELECT id, user_id, amount FROM investments 
-                WHERE status='ACTIVE' AND datetime(created_at, '+7 days') <= datetime('now')
+                WHERE status='ACTIVE' AND datetime(created_at, '+5 minutes') <= datetime('now')
             """)
       expired_investments = c.fetchall()
 
@@ -267,14 +264,13 @@ def check_investments():
         # Lacagtii rayska (Principal) ahaydna waxaa lagu celiyaa balance-ka si lola bixi karo
         update_balance(user_id, amount)
 
-        # Fariin qurux badan oo Ingiriis ah oo loo dirayo isticmaalaha markii uu investment-ku dhammaado
         completion_msg = f"""🎉 **Investment Cycle Completed!**
 
 Dear Investor,
-Your 7-day investment cycle for **${amount:.2f} USDT** has successfully finished! 
+Your investment cycle for **${amount:.2f} USDT** has successfully finished! 
 
 💰 Your initial capital and all accumulated profits have been fully credited to your main balance.
-🔓 **Withdrawal Status:** Your withdrawal lock has now expired, and you are completely free to withdraw your funds anytime!
+🔓 **Withdrawal Status:** Your 5-minute withdrawal lock has now expired, and your balance is fully available for withdrawal!
 
 Thank you for choosing USDTPilotBot."""
         
@@ -285,14 +281,14 @@ Thank you for choosing USDTPilotBot."""
 
         add_notification(
             user_id,
-            f"🎉 Investment completed for ${amount}! 7-day cycle finished and funds unlocked.",
+            f"🎉 Investment completed for ${amount}! Cycle finished and funds unlocked.",
             "SUCCESS",
         )
 
       conn.close()
     except Exception as e:
       print(f"Error in background worker: {e}")
-    time.sleep(3600)
+    time.sleep(60)
 
 
 # ========== BOT COMMANDS & HANDLERS ==========
@@ -338,14 +334,14 @@ def send_profile_card(chat_id, user_id, name, send_welcome_photo=False):
 📊 Active Deposit: `${active_deposit:.2f} USDT`
 📈 Hourly Profit: Active (Updates Every Hour) ⏳
 ⏳ Status: {status}
-🔓 Withdrawal Lock: 7 Days Policy Enforced 🛡️ ({current_time})"""
+🔓 Withdrawal Lock: 5 Minutes Policy Enforced 🛡️ ({current_time})"""
 
   if send_welcome_photo:
     bot.send_photo(
         chat_id,
         WELCOME_BANNER,
         caption=(
-            "🚀 **Welcome to USDTPilotBot!**\n\nInvest & earn profits for 7 days with hourly updates."
+            "🚀 **Welcome to USDTPilotBot!**\n\nInvest & earn profits with quick 5-minute unlocks."
         ),
         parse_mode="Markdown",
     )
@@ -380,7 +376,7 @@ def generate_history_text(user_id):
       status_desc = "PENDING"
 
     res_text += f"{status_emoji} **{tx_type}** | `{amount:.2f} USDT`\n"
-    res_text += f"   • Network: `{network}`\n"
+    res_text += f"   • Network/Wallet: `{network}`\n"
     res_text += f"   • Status: `{status_desc}`\n"
     res_text += f"   • Date: `{created_at[:16]}`\n\n"
 
@@ -430,10 +426,10 @@ def handle_reply_menu(message):
     amounts = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     buttons = []
     for amt in amounts:
-      profit_amt = amt * 0.20 * 7  # Faa'iidada 7-da maalmood wadarta guud
+      profit_amt = amt * 0.20 * 7
       buttons.append(
           InlineKeyboardButton(
-              f"💎 ${amt} ➔ +${profit_amt:.1f} Profit (7 Days)",
+              f"💎 ${amt} ➔ +${profit_amt:.1f} Profit (5 Mins Lock)",
               callback_data=f"invest_{amt}",
           )
       )
@@ -444,10 +440,10 @@ def handle_reply_menu(message):
 
     invest_menu_text = f"""💎 **PROFESSIONAL INVESTMENT CENTER**
 
-Grow your capital securely with our automated 7-day hourly profit system.
+Grow your capital securely with our automated system.
 
 💰 **Your Current Balance:** `{user_bal:.2f} USDT`
-📊 **Plan Overview:** `Profits for 7 Days (Hourly Payouts ⏱️ & Unlock after 7 Days)`
+📊 **Plan Overview:** `Profits with 5-Minute Lock & Quick Unlock Policy`
 
 👇 **Select your investment package below to purchase instantly:**"""
 
@@ -464,11 +460,11 @@ Grow your capital securely with our automated 7-day hourly profit system.
 Securely payout your available funds directly to your wallet.
 
 📌 **How to Withdraw:**
-Type and send the command followed by your amount. 
-*Example:* `/withdraw 50`
+Type and send the command followed by your amount and your wallet address. 
+*Example:* `/withdraw 50 TLPVBmQnS6VTV7MwzLzYy7EjUKqsKob7hs`
 
 ⚠️ **Important Policy & Limits:**
-• **Lock Period:** Withdrawals are securely locked for **7 days** from your last investment time.
+• **Lock Period:** Withdrawals are locked for **5 minutes** from your last investment time.
 • **Minimum Limit:** `{get_setting('min_withdraw')} USDT`
 • **Maximum Limit:** `{get_setting('max_withdraw')} USDT`
 
@@ -509,11 +505,11 @@ Share your link and earn!""",
     terms_text = """📜 **Terms & Conditions / Privacy Policy**
 
 1. **Investment & Profits:**
-   • Investment plans run for a duration of **7 days**.
-   • Profits are calculated and added to your balance **every hour automatically** throughout the 7 days.
+   • Investment plans run for a short duration.
+   • Profits are calculated and added to your balance automatically.
 
-2. **Withdrawal Lock (7-Day Policy):**
-   • For security and stability, withdrawals are locked for **7 days** until your investment cycle successfully completes and funds are unlocked.
+2. **Withdrawal Lock (5-Minute Policy):**
+   • Withdrawals are locked for **5 minutes** until your investment cycle unlocks your funds back to your main balance.
 
 3. **Privacy Policy:**
    • Your user data, Telegram ID, and transaction records are kept secure and confidential.
@@ -535,15 +531,25 @@ By using USDTPilotBot, you agree to abide by these rules and conditions."""
 @bot.message_handler(commands=["withdraw"])
 def withdraw_command(message):
   user_id = message.from_user.id
+  parts = message.text.split()
+  
+  if len(parts) < 3:
+    bot.reply_to(
+        message,
+        "❌ **Invalid Format!**\nPlease use the correct command structure with your wallet address:\n👉 `/withdraw [amount] [wallet_address]`\n*Example:* `/withdraw 50 TLPVBmQnS6VTV7MwzLzYy7EjUKqsKob7hs`",
+        parse_mode="Markdown",
+    )
+    return
+
   try:
-    amount = float(message.text.split()[1])
+    amount = float(parts[1])
+    wallet_address = parts[2]
     if amount <= 0:
       raise ValueError
   except:
     bot.reply_to(
         message,
-        "❌ **Invalid Format!**\nPlease use the correct command structure:\n👉"
-        " `/withdraw 50`",
+        "❌ **Invalid Amount!**\nPlease provide a valid number for the amount.",
         parse_mode="Markdown",
     )
     return
@@ -552,8 +558,7 @@ def withdraw_command(message):
   if not user or (user[2] or 0) < amount:
     bot.reply_to(
         message,
-        f"❌ **Insufficient Balance!**\nYou requested `{amount:.2f} USDT`, but"
-        f" your current balance is `{user[2]:.2f} USDT`.",
+        f"❌ **Insufficient Balance!**\nYou requested `{amount:.2f} USDT`, but your current main balance is `{user[2]:.2f} USDT`.",
         parse_mode="Markdown",
     )
     return
@@ -573,17 +578,18 @@ def withdraw_command(message):
 
   if active_inv:
     invest_time = datetime.strptime(active_inv[0], "%Y-%m-%d %H:%M:%S")
-    if datetime.now() < invest_time + timedelta(days=7):
-      remaining = (invest_time + timedelta(days=7)) - datetime.now()
-      days_left = remaining.days
-      hours_left = remaining.seconds // 3600
+    # Updated to 5 minutes lock check
+    if datetime.now() < invest_time + timedelta(minutes=5):
+      remaining = (invest_time + timedelta(minutes=5)) - datetime.now()
+      minutes_left = remaining.seconds // 60
+      seconds_left = remaining.seconds % 60
 
       lock_msg = f"""❌ **Withdrawal Temporarily Locked**
 
-🛡️ In accordance with our 7-day security policy, withdrawals remain locked until your active investment cycle is fully completed.
+🛡️ In accordance with our 5-minute security policy, withdrawals remain locked until your active investment cycle completes and returns funds to your main balance.
 
 ⏳ **Time Remaining:** 
-• `{days_left} Days and {hours_left} Hours`
+• `{minutes_left} Minutes and {seconds_left} Seconds`
 
 Thank you for your patience and cooperation."""
       bot.reply_to(message, lock_msg, parse_mode="Markdown")
@@ -595,14 +601,17 @@ Thank you for your patience and cooperation."""
   conn.commit()
   conn.close()
 
-  add_request(user_id, "WITHDRAW", amount, "USDT")
+  add_request(user_id, "WITHDRAW", amount, wallet_address)
 
-  success_msg = f"""✅ **Withdrawal Request Submitted Successfully!**
+  success_msg = f"""🎊 **CONGRATULATIONS!** 🎊
+
+✅ **Withdrawal Successfully Submitted!**
 
 📌 **Amount:** `{amount:.2f} USDT`
-🔄 **Status:** `Pending Admin Review`
+📬 **Wallet Address:** `{wallet_address}`
+🔄 **Status:** `Successfully Processed & Pending Transfer`
 
-Your transaction is being processed. Funds will be transferred to your wallet shortly."""
+Your withdrawal request has been received and processed successfully. Funds will arrive in your wallet shortly! 🥳🎉"""
   bot.reply_to(message, success_msg, parse_mode="Markdown")
 
 
@@ -656,8 +665,7 @@ def handle_callback(call):
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
         text=(
-            f"💳 **Deposit Amount: ${amount} USDT**\n\nSelect network to see"
-            " deposit address:"
+            f"💳 **Deposit Amount: ${amount} USDT**\n\nSelect network to see deposit address:"
         ),
         parse_mode="Markdown",
         reply_markup=markup,
@@ -695,7 +703,7 @@ def handle_callback(call):
 ⚠️ **Important:**
 • Only send USDT on {network} network
 • Amount: {amount} USDT
-• Note: Capital & profits are locked for 7 days per terms.
+• Note: Capital unlocks after 5 minutes per terms.
 
 When you have paid, click I have paid""",
         parse_mode="Markdown",
@@ -775,7 +783,6 @@ Your balance will be updated automatically once the admin approves your transact
         parse_mode="Markdown",
     )
 
-  # ========== ADMIN ACTION HANDLERS (APPROVE / REJECT) ==========
   elif data.startswith("adm_app_"):
     if user_id != ADMIN_ID:
       bot.answer_callback_query(call.id, "❌ Unauthorized action!", show_alert=True)
@@ -814,7 +821,7 @@ Your balance will be updated automatically once the admin approves your transact
 Dear Investor,
 We are pleased to inform you that your deposit of **${amount:.2f} USDT** has been successfully verified and credited to your account balance. 
 
-📈 You can now proceed to invest your funds and start earning automated profits for 7 days! Thank you for choosing USDTPilotBot."""
+📈 You can now proceed to invest your funds and start earning automated profits! Thank you for choosing USDTPilotBot."""
     try:
       bot.send_message(target_user_id, user_success_msg, parse_mode="Markdown")
     except Exception as e:
@@ -881,7 +888,7 @@ If you believe this is an error or have completed the payment correctly, please 
       )
       return
 
-    total_profit = amount * 0.20 * 7  # Wadarta guud ee faa'iidada 7-da maalmood
+    total_profit = amount * 0.20 * 7
 
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
@@ -889,8 +896,7 @@ If you believe this is an error or have completed the payment correctly, please 
         "UPDATE users SET balance = balance - ? WHERE id=?", (amount, user_id)
     )
     c.execute(
-        "INSERT INTO investments (user_id, amount, profit, status) VALUES (?,"
-        " ?, ?, 'ACTIVE')",
+        "INSERT INTO investments (user_id, amount, profit, status) VALUES (?, ?, ?, 'ACTIVE')",
         (user_id, amount, total_profit),
     )
     conn.commit()
@@ -898,18 +904,18 @@ If you believe this is an error or have completed the payment correctly, please 
 
     bot.answer_callback_query(
         call.id,
-        f"✅ Successfully invested ${amount} for 7 days!",
+        f"✅ Successfully invested ${amount} for 5 minutes cycle!",
         show_alert=True,
     )
     bot.send_message(
         call.message.chat.id,
-        f"""🚀 **7-DAY INVESTMENT ACTIVATED!**
+        f"""🚀 **5-MINUTE INVESTMENT ACTIVATED!**
 
 💵 **Invested Amount:** `${amount:.2f} USDT`
 📈 **Total Expected Profit:** `+${total_profit:.2f} USDT`
-⏱️ **Hourly Distribution:** `Active (Credited every hour for 7 days)`
-⏳ **Duration:** `7 Days Cycle`
-🛡️ **Security Policy:** `Withdrawal locked until cycle completion`
+⏱️ **Hourly Distribution:** `Active (Credited every hour)`
+⏳ **Duration Lock:** `5 Minutes Cycle`
+🛡️ **Security Policy:** `Funds unlock automatically to main balance after 5 minutes`
 
 Your investment is now live and growing automatically!""",
         parse_mode="Markdown",
@@ -921,13 +927,13 @@ Your investment is now live and growing automatically!""",
 @app.route("/health")
 def health():
   return (
-      "✅ USDTPilotBot is running 24/7 with 7-Day Auto-Investment & Clean UI!"
+      "✅ USDTPilotBot is running 24/7 with 5-Minute Auto-Investment & Clean UI!"
   )
 
 
 if __name__ == "__main__":
   print(
-      "🚀 USDTPilotBot is starting with 7-Day Auto-Investment, Clean UI & Banner..."
+      "🚀 USDTPilotBot is starting with 5-Minute Auto-Investment, Clean UI & Wallet Withdrawal..."
   )
 
   inv_thread = threading.Thread(target=check_investments, daemon=True)
