@@ -79,7 +79,7 @@ def init_db():
       "max_withdraw": "10000",
       "referral_bonus": "0.5",
       "maintenance_mode": "false",
-      "welcome_message": "Welcome to USDTPilotBot! 🚀 Invest & earn 20% profit in 24 hours.",
+      "welcome_message": "Welcome to USDTPilotBot! 🚀 Invest & earn profit for 7 days.",
       "currency": "USDT",
   }
 
@@ -240,17 +240,20 @@ def check_investments():
       conn = sqlite3.connect("bot.db")
       c = conn.cursor()
 
-      c.execute("SELECT id, user_id, amount FROM investments WHERE status='ACTIVE'")
+      # Faa'iidada saacadiiba marso (20% wadarta guud ee 7-da maalmood oo loo qaybiyay saacadaha)
+      c.execute("SELECT id, user_id, amount, profit FROM investments WHERE status='ACTIVE'")
       active_investments = c.fetchall()
 
       for inv in active_investments:
-        inv_id, user_id, amount = inv
-        hourly_profit = (amount * 0.20) / 24
+        inv_id, user_id, amount, total_profit = inv
+        # Wadarta faa'iidada 7-da maalmood waa (amount * 0.20 * 7 ama intii la rabo, halkaan waxaa loo xisaabiyay saacad walba)
+        hourly_profit = (total_profit / (7 * 24))
         update_balance(user_id, hourly_profit)
 
+      # Hubinta maalgashiyada dhammaystay 7-da maalmood (168 saacadood)
       c.execute("""
                 SELECT id, user_id, amount FROM investments 
-                WHERE status='ACTIVE' AND datetime(created_at, '+24 hours') <= datetime('now')
+                WHERE status='ACTIVE' AND datetime(created_at, '+7 days') <= datetime('now')
             """)
       expired_investments = c.fetchall()
 
@@ -260,10 +263,29 @@ def check_investments():
             "UPDATE investments SET status='COMPLETED' WHERE id=?", (inv_id,)
         )
         conn.commit()
+        
+        # Lacagtii rayska (Principal) ahaydna waxaa lagu celiyaa balance-ka si lola bixi karo
+        update_balance(user_id, amount)
+
+        # Fariin qurux badan oo Ingiriis ah oo loo dirayo isticmaalaha markii uu investment-ku dhammaado
+        completion_msg = f"""🎉 **Investment Cycle Completed!**
+
+Dear Investor,
+Your 7-day investment cycle for **${amount:.2f} USDT** has successfully finished! 
+
+💰 Your initial capital and all accumulated profits have been fully credited to your main balance.
+🔓 **Withdrawal Status:** Your withdrawal lock has now expired, and you are completely free to withdraw your funds anytime!
+
+Thank you for choosing USDTPilotBot."""
+        
+        try:
+          bot.send_message(user_id, completion_msg, parse_mode="Markdown")
+        except Exception as e:
+          print(f"Error sending completion message: {e}")
+
         add_notification(
             user_id,
-            f"🎉 Investment completed for ${amount}! Your 20% total profit"
-            " cycle finished.",
+            f"🎉 Investment completed for ${amount}! 7-day cycle finished and funds unlocked.",
             "SUCCESS",
         )
 
@@ -301,7 +323,6 @@ def send_profile_card(chat_id, user_id, name, send_welcome_photo=False):
   balance = user[2] if user else 0.00
   active_deposit = get_active_deposit(user_id)
   
-  # Status-ka hadda waa mid si sax ah u eegaya haddii balance ama active deposit uu jiro
   if balance > 0 or active_deposit > 0:
     status = "Active 🟢"
   else:
@@ -324,8 +345,7 @@ def send_profile_card(chat_id, user_id, name, send_welcome_photo=False):
         chat_id,
         WELCOME_BANNER,
         caption=(
-            "🚀 **Welcome to USDTPilotBot!**\n\nInvest & earn 20% profit in"
-            " 24 hours with hourly updates."
+            "🚀 **Welcome to USDTPilotBot!**\n\nInvest & earn profits for 7 days with hourly updates."
         ),
         parse_mode="Markdown",
     )
@@ -400,8 +420,7 @@ def handle_reply_menu(message):
 
     bot.send_message(
         message.chat.id,
-        "💳 **Deposit Amount**\n\nPlease select the amount you want to"
-        " deposit:",
+        "💳 **Deposit Amount**\n\nPlease select the amount you want to deposit:",
         parse_mode="Markdown",
         reply_markup=markup,
     )
@@ -411,10 +430,10 @@ def handle_reply_menu(message):
     amounts = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     buttons = []
     for amt in amounts:
-      profit_amt = amt * 0.20
+      profit_amt = amt * 0.20 * 7  # Faa'iidada 7-da maalmood wadarta guud
       buttons.append(
           InlineKeyboardButton(
-              f"💎 ${amt} ➔ +${profit_amt:.1f} Profit",
+              f"💎 ${amt} ➔ +${profit_amt:.1f} Profit (7 Days)",
               callback_data=f"invest_{amt}",
           )
       )
@@ -425,10 +444,10 @@ def handle_reply_menu(message):
 
     invest_menu_text = f"""💎 **PROFESSIONAL INVESTMENT CENTER**
 
-Grow your capital securely with our automated hourly profit system.
+Grow your capital securely with our automated 7-day hourly profit system.
 
 💰 **Your Current Balance:** `{user_bal:.2f} USDT`
-📊 **Plan Overview:** `+20% Profit in 24 Hours (Hourly Payouts ⏱️)`
+📊 **Plan Overview:** `Profits for 7 Days (Hourly Payouts ⏱️ & Unlock after 7 Days)`
 
 👇 **Select your investment package below to purchase instantly:**"""
 
@@ -449,7 +468,7 @@ Type and send the command followed by your amount.
 *Example:* `/withdraw 50`
 
 ⚠️ **Important Policy & Limits:**
-• **Lock Period:** Withdrawals are securely locked for **7 days** from your last approved deposit/investment time.
+• **Lock Period:** Withdrawals are securely locked for **7 days** from your last investment time.
 • **Minimum Limit:** `{get_setting('min_withdraw')} USDT`
 • **Maximum Limit:** `{get_setting('max_withdraw')} USDT`
 
@@ -490,14 +509,14 @@ Share your link and earn!""",
     terms_text = """📜 **Terms & Conditions / Privacy Policy**
 
 1. **Investment & Profits:**
-   • You earn a 20% profit cycle over 24 hours.
-   • Profits are calculated and added to your balance **every hour automatically**.
+   • Investment plans run for a duration of **7 days**.
+   • Profits are calculated and added to your balance **every hour automatically** throughout the 7 days.
 
 2. **Withdrawal Lock (7-Day Policy):**
-   • For security and stability, both your principal deposit and accumulated profits can only be withdrawn **after 7 days** from the exact hour of your deposit/investment.
+   • For security and stability, withdrawals are locked for **7 days** until your investment cycle successfully completes and funds are unlocked.
 
 3. **Privacy Policy:**
-   • Your user data, Telegram ID, and transaction records are kept secure and confidential. We never share your details with third parties.
+   • Your user data, Telegram ID, and transaction records are kept secure and confidential.
 
 By using USDTPilotBot, you agree to abide by these rules and conditions."""
     bot.send_message(message.chat.id, terms_text, parse_mode="Markdown")
@@ -543,25 +562,25 @@ def withdraw_command(message):
   c = conn.cursor()
   c.execute(
       """
-        SELECT created_at FROM transactions 
-        WHERE user_id=? AND type='DEPOSIT' AND status='APPROVED' 
-        ORDER BY created_at DESC LIMIT 1
+        SELECT created_at FROM investments 
+        WHERE user_id=? AND status='ACTIVE' 
+        ORDER BY created_at ASC LIMIT 1
     """,
       (user_id,),
   )
-  last_deposit = c.fetchone()
+  active_inv = c.fetchone()
   conn.close()
 
-  if last_deposit:
-    deposit_time = datetime.strptime(last_deposit[0], "%Y-%m-%d %H:%M:%S")
-    if datetime.now() < deposit_time + timedelta(days=7):
-      remaining = (deposit_time + timedelta(days=7)) - datetime.now()
+  if active_inv:
+    invest_time = datetime.strptime(active_inv[0], "%Y-%m-%d %H:%M:%S")
+    if datetime.now() < invest_time + timedelta(days=7):
+      remaining = (invest_time + timedelta(days=7)) - datetime.now()
       days_left = remaining.days
       hours_left = remaining.seconds // 3600
 
       lock_msg = f"""❌ **Withdrawal Temporarily Locked**
 
-🛡️ In accordance with our security guidelines and the 7-day policy, withdrawals are restricted until the lock period expires.
+🛡️ In accordance with our 7-day security policy, withdrawals remain locked until your active investment cycle is fully completed.
 
 ⏳ **Time Remaining:** 
 • `{days_left} Days and {hours_left} Hours`
@@ -676,7 +695,7 @@ def handle_callback(call):
 ⚠️ **Important:**
 • Only send USDT on {network} network
 • Amount: {amount} USDT
-• Note: Capital & profits are lockable for 7 days per terms.
+• Note: Capital & profits are locked for 7 days per terms.
 
 When you have paid, click I have paid""",
         parse_mode="Markdown",
@@ -775,12 +794,10 @@ Your balance will be updated automatically once the admin approves your transact
     conn.commit()
     conn.close()
 
-    # Balances-ka ayaa si toos ah loo update-gareeyay
     update_balance(target_user_id, amount)
     add_notification(
         target_user_id,
-        f"🎉 Your deposit of ${amount} USDT has been approved and added to"
-        " your balance!",
+        f"🎉 Your deposit of ${amount} USDT has been approved and added to your balance!",
         "SUCCESS",
     )
 
@@ -797,7 +814,7 @@ Your balance will be updated automatically once the admin approves your transact
 Dear Investor,
 We are pleased to inform you that your deposit of **${amount:.2f} USDT** has been successfully verified and credited to your account balance. 
 
-📈 You can now proceed to invest your funds and start earning automated hourly profits! Thank you for choosing USDTPilotBot."""
+📈 You can now proceed to invest your funds and start earning automated profits for 7 days! Thank you for choosing USDTPilotBot."""
     try:
       bot.send_message(target_user_id, user_success_msg, parse_mode="Markdown")
     except Exception as e:
@@ -864,6 +881,8 @@ If you believe this is an error or have completed the payment correctly, please 
       )
       return
 
+    total_profit = amount * 0.20 * 7  # Wadarta guud ee faa'iidada 7-da maalmood
+
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
     c.execute(
@@ -872,25 +891,25 @@ If you believe this is an error or have completed the payment correctly, please 
     c.execute(
         "INSERT INTO investments (user_id, amount, profit, status) VALUES (?,"
         " ?, ?, 'ACTIVE')",
-        (user_id, amount, amount * 0.20),
+        (user_id, amount, total_profit),
     )
     conn.commit()
     conn.close()
 
     bot.answer_callback_query(
         call.id,
-        f"✅ Successfully invested ${amount} automatically!",
+        f"✅ Successfully invested ${amount} for 7 days!",
         show_alert=True,
     )
     bot.send_message(
         call.message.chat.id,
-        f"""🚀 **AUTOMATIC INVESTMENT ACTIVATED!**
+        f"""🚀 **7-DAY INVESTMENT ACTIVATED!**
 
 💵 **Invested Amount:** `${amount:.2f} USDT`
-📈 **Total Expected Profit:** `+${amount * 0.20:.2f} USDT` (20%)
-⏱️ **Hourly Distribution:** `Active (Credited every hour)`
-⏳ **Duration:** `24 Hours Cycle`
-🛡️ **Security Policy:** `7 Days Lock (Applies to Principal & Profit)`
+📈 **Total Expected Profit:** `+${total_profit:.2f} USDT`
+⏱️ **Hourly Distribution:** `Active (Credited every hour for 7 days)`
+⏳ **Duration:** `7 Days Cycle`
+🛡️ **Security Policy:** `Withdrawal locked until cycle completion`
 
 Your investment is now live and growing automatically!""",
         parse_mode="Markdown",
@@ -902,15 +921,13 @@ Your investment is now live and growing automatically!""",
 @app.route("/health")
 def health():
   return (
-      "✅ USDTPilotBot is running 24/7 with Instant Auto-Investment & Clean"
-      " UI!"
+      "✅ USDTPilotBot is running 24/7 with 7-Day Auto-Investment & Clean UI!"
   )
 
 
 if __name__ == "__main__":
   print(
-      "🚀 USDTPilotBot is starting with Instant Auto-Investment, Clean UI &"
-      " Banner..."
+      "🚀 USDTPilotBot is starting with 7-Day Auto-Investment, Clean UI & Banner..."
   )
 
   inv_thread = threading.Thread(target=check_investments, daemon=True)
