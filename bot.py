@@ -466,6 +466,7 @@ Grow your capital securely with our automated 7-day hourly profit system.
     user = get_user(user_id)
     balance = user[2] if user else 0.00
 
+    # Hubinta in qofku uu leeyahay active investment oo aan 7 maalmood ka soo marin
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
     c.execute(
@@ -488,12 +489,12 @@ Grow your capital securely with our automated 7-day hourly profit system.
 
         lock_msg = f"""❌ **Withdrawal Temporarily Locked**
 
-🛡️ In accordance with our 7-day security policy, withdrawals remain locked until your active investment cycle is fully completed.
+🛡️ Waxaa kuu socda maalgashi (Investment) shaqaynaya. Sida ku xusan shuruudahayaga, lacagtaada lama bixi karo ilaa ay ka dhammaato muddada **7-da maalmood** ah oo ay faa'iidadaadu oo dhan si buuxda ugu soo dhacdo main balance-kaaga.
 
-⏳ **Time Remaining:** 
-• `{days_left} Days and {hours_left} Hours`
+⏳ **Waqtiga ka dhiman:** 
+• `{days_left} Maalmood iyo {hours_left} Saacadood`
 
-Thank you for your patience and cooperation."""
+Fadlan sug inta uu wareeggu ka dhammaanayo."""
         bot.send_message(message.chat.id, lock_msg, parse_mode="Markdown")
         return
 
@@ -913,7 +914,6 @@ Your balance will be updated automatically once the admin approves your transact
     conn.commit()
     conn.close()
 
-    # Diiwaanka si uu balance-ka u kordho si automatic ah marka la ansixiyo
     update_balance(target_user_id, amount)
     
     add_notification(
