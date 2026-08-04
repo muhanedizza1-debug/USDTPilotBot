@@ -23,6 +23,10 @@ WELCOME_BANNER = "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?w
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
+# Dictionary-ga lagu kaydiyo tillaabooyinka withdrawal-ka ee isticmaalaha
+user_withdrawal_data = {}
+user_deposit_amounts = {}
+
 
 # ========== DATABASE ==========
 def init_db():
@@ -240,17 +244,17 @@ def check_investments():
       conn = sqlite3.connect("bot.db")
       c = conn.cursor()
 
-      # Faa'iidada saacadiiba marso (20% wadarta guud ee 7-da maalmood oo loo qaybiyay saacadaha)
-      c.execute("SELECT id, user_id, amount, profit FROM investments WHERE status='ACTIVE'")
+      c.execute(
+          "SELECT id, user_id, amount, profit FROM investments WHERE"
+          " status='ACTIVE'"
+      )
       active_investments = c.fetchall()
 
       for inv in active_investments:
         inv_id, user_id, amount, total_profit = inv
-        # Wadarta faa'iidada 7-da maalmood waa (amount * 0.20 * 7 ama intii la rabo, halkaan waxaa loo xisaabiyay saacad walba)
-        hourly_profit = (total_profit / (7 * 24))
+        hourly_profit = total_profit / (7 * 24)
         update_balance(user_id, hourly_profit)
 
-      # Hubinta maalgashiyada dhammaystay 7-da maalmood (168 saacadood)
       c.execute("""
                 SELECT id, user_id, amount FROM investments 
                 WHERE status='ACTIVE' AND datetime(created_at, '+7 days') <= datetime('now')
@@ -263,11 +267,9 @@ def check_investments():
             "UPDATE investments SET status='COMPLETED' WHERE id=?", (inv_id,)
         )
         conn.commit()
-        
-        # Lacagtii rayska (Principal) ahaydna waxaa lagu celiyaa balance-ka si lola bixi karo
+
         update_balance(user_id, amount)
 
-        # Fariin qurux badan oo Ingiriis ah oo loo dirayo isticmaalaha markii uu investment-ku dhammaado
         completion_msg = f"""🎉 **Investment Cycle Completed!**
 
 Dear Investor,
@@ -277,7 +279,7 @@ Your 7-day investment cycle for **${amount:.2f} USDT** has successfully finished
 🔓 **Withdrawal Status:** Your withdrawal lock has now expired, and you are completely free to withdraw your funds anytime!
 
 Thank you for choosing USDTPilotBot."""
-        
+
         try:
           bot.send_message(user_id, completion_msg, parse_mode="Markdown")
         except Exception as e:
@@ -285,7 +287,8 @@ Thank you for choosing USDTPilotBot."""
 
         add_notification(
             user_id,
-            f"🎉 Investment completed for ${amount}! 7-day cycle finished and funds unlocked.",
+            f"🎉 Investment completed for ${amount}! 7-day cycle finished and"
+            " funds unlocked.",
             "SUCCESS",
         )
 
@@ -322,12 +325,12 @@ def send_profile_card(chat_id, user_id, name, send_welcome_photo=False):
   user = get_user(user_id)
   balance = user[2] if user else 0.00
   active_deposit = get_active_deposit(user_id)
-  
+
   if balance > 0 or active_deposit > 0:
     status = "Active 🟢"
   else:
     status = "No Deposit"
-    
+
   current_time = datetime.now().strftime("%I:%M %p")
 
   text = f"""👤 **PROFILE & DASHBOARD**
@@ -345,7 +348,8 @@ def send_profile_card(chat_id, user_id, name, send_welcome_photo=False):
         chat_id,
         WELCOME_BANNER,
         caption=(
-            "🚀 **Welcome to USDTPilotBot!**\n\nInvest & earn profits for 7 days with hourly updates."
+            "🚀 **Welcome to USDTPilotBot!**\n\nInvest & earn profits for 7 days"
+            " with hourly updates."
         ),
         parse_mode="Markdown",
     )
@@ -430,7 +434,7 @@ def handle_reply_menu(message):
     amounts = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     buttons = []
     for amt in amounts:
-      profit_amt = amt * 0.20 * 7  # Faa'iidada 7-da maalmood wadarta guud
+      profit_amt = amt * 0.20 * 7
       buttons.append(
           InlineKeyboardButton(
               f"💎 ${amt} ➔ +${profit_amt:.1f} Profit (7 Days)",
@@ -459,26 +463,72 @@ Grow your capital securely with our automated 7-day hourly profit system.
     )
 
   elif text == "💸 Withdraw":
-    withdraw_info_text = f"""💸 **WITHDRAWAL CENTER**
+    user = get_user(user_id)
+    balance = user[2] if user else 0.00
 
-Securely payout your available funds directly to your wallet.
+    conn = sqlite3.connect("bot.db")
+    c = conn.cursor()
+    c.execute(
+        """
+            SELECT created_at FROM investments 
+            WHERE user_id=? AND status='ACTIVE' 
+            ORDER BY created_at ASC LIMIT 1
+        """,
+        (user_id,),
+    )
+    active_inv = c.fetchone()
+    conn.close()
 
-📌 **How to Withdraw:**
-Type and send the command followed by your amount. 
-*Example:* `/withdraw 50`
+    if active_inv:
+      invest_time = datetime.strptime(active_inv[0], "%Y-%m-%d %H:%M:%S")
+      if datetime.now() < invest_time + timedelta(days=7):
+        remaining = (invest_time + timedelta(days=7)) - datetime.now()
+        days_left = remaining.days
+        hours_left = remaining.seconds // 3600
 
-⚠️ **Important Policy & Limits:**
-• **Lock Period:** Withdrawals are securely locked for **7 days** from your last investment time.
-• **Minimum Limit:** `{get_setting('min_withdraw')} USDT`
-• **Maximum Limit:** `{get_setting('max_withdraw')} USDT`
+        lock_msg = f"""❌ **Withdrawal Temporarily Locked**
 
-Need help? Contact our support team anytime."""
-    bot.send_message(message.chat.id, withdraw_info_text, parse_mode="Markdown")
+🛡️ In accordance with our 7-day security policy, withdrawals remain locked until your active investment cycle is fully completed.
+
+⏳ **Time Remaining:** 
+• `{days_left} Days and {hours_left} Hours`
+
+Thank you for your patience and cooperation."""
+        bot.send_message(message.chat.id, lock_msg, parse_mode="Markdown")
+        return
+
+    if balance <= 0:
+      bot.send_message(
+          message.chat.id,
+          "❌ **Your balance is 0.00 USDT.** You need available funds to"
+          " withdraw.",
+          parse_mode="Markdown",
+      )
+      return
+
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("💵 TRC20", callback_data="wd_net_TRC20"),
+        InlineKeyboardButton("💵 BEP20", callback_data="wd_net_BEP20"),
+        InlineKeyboardButton("💵 ERC20", callback_data="wd_net_ERC20"),
+        InlineKeyboardButton("💵 TON", callback_data="wd_net_TON"),
+    )
+
+    withdraw_text = f"""💸 **WITHDRAWAL CENTER**
+
+💰 **Available Balance:** `{balance:.2f} USDT`
+
+👇 **Please select your withdrawal network below:**"""
+    bot.send_message(
+        message.chat.id, withdraw_text, parse_mode="Markdown", reply_markup=markup
+    )
 
   elif text == "📜 History":
     markup = InlineKeyboardMarkup()
     markup.add(
-        InlineKeyboardButton("🔄 Refresh History", callback_data="refresh_history")
+        InlineKeyboardButton(
+            "🔄 Refresh History", callback_data="refresh_history"
+        )
     )
     history_msg = generate_history_text(user_id)
     bot.send_message(
@@ -524,7 +574,8 @@ By using USDTPilotBot, you agree to abide by these rules and conditions."""
   elif text == "🛠️ Support":
     bot.send_message(
         message.chat.id,
-        "🛠️ **Support**\n\nFor any issues or questions, contact admin. @USDTPilotBotsupport12",
+        "🛠️ **Support**\n\nFor any issues or questions, contact admin."
+        " @USDTPilotBotsupport12",
         parse_mode="Markdown",
     )
 
@@ -532,62 +583,66 @@ By using USDTPilotBot, you agree to abide by these rules and conditions."""
     send_profile_card(message.chat.id, user_id, name)
 
 
-@bot.message_handler(commands=["withdraw"])
-def withdraw_command(message):
+# Message handler for Withdrawal Address input
+@bot.message_handler(
+    func=lambda msg: msg.from_user.id in user_withdrawal_data
+    and user_withdrawal_data[msg.from_user.id].get("step") == "waiting_address"
+)
+def process_withdraw_address(message):
   user_id = message.from_user.id
+  address = message.text.strip()
+  user_withdrawal_data[user_id]["address"] = address
+  user_withdrawal_data[user_id]["step"] = "waiting_amount"
+
+  user = get_user(user_id)
+  balance = user[2] if user else 0.00
+
+  bot.reply_to(
+      message,
+      f"""📝 **Wallet Address Saved!**
+      
+Address: `{address}`
+
+💰 **Available Balance:** `{balance:.2f} USDT`
+Now, please send the **Amount** you want to withdraw (e.g., `50` or `100`):""",
+      parse_mode="Markdown",
+  )
+
+
+# Message handler for Withdrawal Amount input
+@bot.message_handler(
+    func=lambda msg: msg.from_user.id in user_withdrawal_data
+    and user_withdrawal_data[msg.from_user.id].get("step") == "waiting_amount"
+)
+def process_withdraw_amount(message):
+  user_id = message.from_user.id
+  data_dict = user_withdrawal_data[user_id]
+  network = data_dict["network"]
+  address = data_dict["address"]
+
   try:
-    amount = float(message.text.split()[1])
+    amount = float(message.text.strip())
     if amount <= 0:
       raise ValueError
   except:
     bot.reply_to(
         message,
-        "❌ **Invalid Format!**\nPlease use the correct command structure:\n👉"
-        " `/withdraw 50`",
+        "❌ **Invalid Amount!** Please enter a valid number (e.g., `50`).",
         parse_mode="Markdown",
     )
     return
 
   user = get_user(user_id)
-  if not user or (user[2] or 0) < amount:
+  balance = user[2] if user else 0.00
+
+  if balance < amount:
     bot.reply_to(
         message,
-        f"❌ **Insufficient Balance!**\nYou requested `{amount:.2f} USDT`, but"
-        f" your current balance is `{user[2]:.2f} USDT`.",
+        f"❌ **Insufficient Balance!** You requested `{amount} USDT`, but your"
+        f" available balance is `{balance:.2f} USDT`.",
         parse_mode="Markdown",
     )
     return
-
-  conn = sqlite3.connect("bot.db")
-  c = conn.cursor()
-  c.execute(
-      """
-        SELECT created_at FROM investments 
-        WHERE user_id=? AND status='ACTIVE' 
-        ORDER BY created_at ASC LIMIT 1
-    """,
-      (user_id,),
-  )
-  active_inv = c.fetchone()
-  conn.close()
-
-  if active_inv:
-    invest_time = datetime.strptime(active_inv[0], "%Y-%m-%d %H:%M:%S")
-    if datetime.now() < invest_time + timedelta(days=7):
-      remaining = (invest_time + timedelta(days=7)) - datetime.now()
-      days_left = remaining.days
-      hours_left = remaining.seconds // 3600
-
-      lock_msg = f"""❌ **Withdrawal Temporarily Locked**
-
-🛡️ In accordance with our 7-day security policy, withdrawals remain locked until your active investment cycle is fully completed.
-
-⏳ **Time Remaining:** 
-• `{days_left} Days and {hours_left} Hours`
-
-Thank you for your patience and cooperation."""
-      bot.reply_to(message, lock_msg, parse_mode="Markdown")
-      return
 
   conn = sqlite3.connect("bot.db")
   c = conn.cursor()
@@ -595,18 +650,62 @@ Thank you for your patience and cooperation."""
   conn.commit()
   conn.close()
 
-  add_request(user_id, "WITHDRAW", amount, "USDT")
+  tx_id = add_request(user_id, "WITHDRAW", amount, network)
+  del user_withdrawal_data[user_id]
 
-  success_msg = f"""✅ **Withdrawal Request Submitted Successfully!**
+  name = message.from_user.first_name or "User"
+  username = (
+      f"@{message.from_user.username}"
+      if message.from_user.username
+      else "No Username"
+  )
+  remaining_bal = balance - amount
 
-📌 **Amount:** `{amount:.2f} USDT`
-🔄 **Status:** `Pending Admin Review`
+  admin_msg = f"""🔔 **NEW WITHDRAWAL REQUEST**
 
-Your transaction is being processed. Funds will be transferred to your wallet shortly."""
-  bot.reply_to(message, success_msg, parse_mode="Markdown")
+👤 **USER PROFILE:**
+• **Name:** {name}
+• **Username:** {username}
+• **User ID:** `{user_id}`
+• **Available Balance Before WD:** `${balance:.2f} USDT`
+• **Remaining Balance:** `${remaining_bal:.2f} USDT`
 
+💸 **TRANSACTION DETAILS:**
+• **Withdrawal Amount:** `{amount} USDT`
+• **Network:** `{network}`
+• **Destination Wallet Address:** 
+`{address}`
+• **Transaction ID:** `{tx_id}`"""
 
-user_deposit_amounts = {}
+  admin_markup = InlineKeyboardMarkup(row_width=2)
+  admin_markup.add(
+      InlineKeyboardButton(
+          "✅ Approve WD", callback_data=f"adm_wd_app_{tx_id}_{user_id}_{amount}"
+      ),
+      InlineKeyboardButton(
+          "❌ Reject WD", callback_data=f"adm_wd_rej_{tx_id}_{user_id}_{amount}"
+      ),
+  )
+
+  try:
+    bot.send_message(
+        ADMIN_ID, admin_msg, parse_mode="Markdown", reply_markup=admin_markup
+    )
+  except Exception as e:
+    print(f"Error sending withdrawal to admin: {e}")
+
+  bot.reply_to(
+      message,
+      f"""✅ **Withdrawal Request Submitted Successfully!**
+
+💰 **Amount:** `{amount:.2f} USDT`
+🌐 **Network:** `{network}`
+📍 **Address:** `{address}`
+⏳ **Status:** `Pending Admin Review`
+
+Your request has been sent to the admin. Funds will be sent to your wallet shortly.""",
+      parse_mode="Markdown",
+  )
 
 
 # ========== CALLBACK HANDLERS ==========
@@ -618,7 +717,9 @@ def handle_callback(call):
   if data == "refresh_history":
     markup = InlineKeyboardMarkup()
     markup.add(
-        InlineKeyboardButton("🔄 Refresh History", callback_data="refresh_history")
+        InlineKeyboardButton(
+            "🔄 Refresh History", callback_data="refresh_history"
+        )
     )
     updated_history = generate_history_text(user_id)
     try:
@@ -632,6 +733,24 @@ def handle_callback(call):
       bot.answer_callback_query(call.id, "✅ History updated successfully!")
     except Exception:
       bot.answer_callback_query(call.id, "⚠️ History is already up to date.")
+
+  elif data.startswith("wd_net_"):
+    network = data.replace("wd_net_", "")
+    user_withdrawal_data[user_id] = {
+        "network": network,
+        "step": "waiting_address",
+    }
+
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=(
+            f"💸 **Withdrawal via {network}**\n\nNow, please send your **Wallet"
+            " Address** where you want to receive your funds:"
+        ),
+        parse_mode="Markdown",
+    )
+    bot.answer_callback_query(call.id)
 
   elif data.startswith("dep_amt_"):
     amount = data.replace("dep_amt_", "")
@@ -775,7 +894,7 @@ Your balance will be updated automatically once the admin approves your transact
         parse_mode="Markdown",
     )
 
-  # ========== ADMIN ACTION HANDLERS (APPROVE / REJECT) ==========
+  # ========== ADMIN DEPOSIT ACTION HANDLERS ==========
   elif data.startswith("adm_app_"):
     if user_id != ADMIN_ID:
       bot.answer_callback_query(call.id, "❌ Unauthorized action!", show_alert=True)
@@ -797,7 +916,8 @@ Your balance will be updated automatically once the admin approves your transact
     update_balance(target_user_id, amount)
     add_notification(
         target_user_id,
-        f"🎉 Your deposit of ${amount} USDT has been approved and added to your balance!",
+        f"🎉 Your deposit of ${amount} USDT has been approved and added to your"
+        " balance!",
         "SUCCESS",
     )
 
@@ -852,19 +972,98 @@ We are pleased to inform you that your deposit of **${amount:.2f} USDT** has bee
     )
     bot.answer_callback_query(call.id, "❌ Deposit Rejected.")
 
-    user_reject_msg = f"""❌ **Deposit Request Declined**
+  # ========== ADMIN WITHDRAWAL ACTION HANDLERS ==========
+  elif data.startswith("adm_wd_app_"):
+    if user_id != ADMIN_ID:
+      bot.answer_callback_query(call.id, "❌ Unauthorized action!", show_alert=True)
+      return
 
-Dear Valued User,
-We regret to inform you that your deposit request for **${amount:.2f} USDT** could not be verified or approved at this time. 
+    parts = data.split("_")
+    tx_id = parts[3]
+    target_user_id = int(parts[4])
+    amount = float(parts[5])
 
-📌 **Possible Reasons:**
-• Incorrect transaction hash or network.
-• The exact transferred amount did not match.
-• Payment was not received on our network address.
+    conn = sqlite3.connect("bot.db")
+    c = conn.cursor()
+    c.execute(
+        "UPDATE transactions SET status='APPROVED' WHERE id=?", (tx_id,)
+    )
+    conn.commit()
+    conn.close()
 
-If you believe this is an error or have completed the payment correctly, please contact our support team with your transaction proof."""
+    add_notification(
+        target_user_id,
+        f"🎉 Your withdrawal of ${amount} USDT has been approved and sent to your"
+        " wallet!",
+        "SUCCESS",
+    )
+
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=call.message.text
+        + f"\n\n✅ **STATUS:** `WITHDRAWAL APPROVED BY ADMIN`",
+        parse_mode="Markdown",
+    )
+    bot.answer_callback_query(call.id, "✅ Withdrawal Approved!")
+
     try:
-      bot.send_message(target_user_id, user_reject_msg, parse_mode="Markdown")
+      bot.send_message(
+          target_user_id,
+          f"✅ **Withdrawal Sent!**\n\nYour withdrawal of **${amount:.2f}"
+          " USDT** has been successfully processed and sent to your wallet"
+          " address.",
+          parse_mode="Markdown",
+      )
+    except Exception as e:
+      print(f"Error notifying user: {e}")
+
+  elif data.startswith("adm_wd_rej_"):
+    if user_id != ADMIN_ID:
+      bot.answer_callback_query(call.id, "❌ Unauthorized action!", show_alert=True)
+      return
+
+    parts = data.split("_")
+    tx_id = parts[3]
+    target_user_id = int(parts[4])
+    amount = float(parts[5])
+
+    conn = sqlite3.connect("bot.db")
+    c = conn.cursor()
+    c.execute(
+        "UPDATE transactions SET status='REJECTED' WHERE id=?", (tx_id,)
+    )
+    c.execute(
+        "UPDATE users SET balance = balance + ? WHERE id=?",
+        (amount, target_user_id),
+    )
+    conn.commit()
+    conn.close()
+
+    add_notification(
+        target_user_id,
+        f"❌ Your withdrawal of ${amount} USDT was rejected. Funds returned to"
+        " balance.",
+        "ERROR",
+    )
+
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=call.message.text
+        + f"\n\n❌ **STATUS:** `WITHDRAWAL REJECTED & REFUNDED`",
+        parse_mode="Markdown",
+    )
+    bot.answer_callback_query(call.id, "❌ Withdrawal Rejected & Refunded.")
+
+    try:
+      bot.send_message(
+          target_user_id,
+          f"❌ **Withdrawal Declined**\n\nYour withdrawal request for"
+          f" **${amount:.2f} USDT** was declined by admin. The funds have been"
+          " refunded to your balance.",
+          parse_mode="Markdown",
+      )
     except Exception as e:
       print(f"Error notifying user: {e}")
 
@@ -881,7 +1080,7 @@ If you believe this is an error or have completed the payment correctly, please 
       )
       return
 
-    total_profit = amount * 0.20 * 7  # Wadarta guud ee faa'iidada 7-da maalmood
+    total_profit = amount * 0.20 * 7
 
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
