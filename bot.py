@@ -466,7 +466,6 @@ Grow your capital securely with our automated 7-day hourly profit system.
     user = get_user(user_id)
     balance = user[2] if user else 0.00
 
-    # Hubinta in qofku uu leeyahay active investment oo aan 7 maalmood ka soo marin
     conn = sqlite3.connect("bot.db")
     c = conn.cursor()
     c.execute(
@@ -483,15 +482,18 @@ Grow your capital securely with our automated 7-day hourly profit system.
     if active_inv:
       invest_time = datetime.strptime(active_inv[0], "%Y-%m-%d %H:%M:%S")
       if datetime.now() < invest_time + timedelta(days=7):
-        lock_msg = """💰 **Withdrawal Information**
+        remaining = (invest_time + timedelta(days=7)) - datetime.now()
+        days_left = remaining.days
+        hours_left = remaining.seconds // 3600
 
-🔒 Your balance is temporarily locked for withdrawal.
+        lock_msg = f"""❌ **Withdrawal Temporarily Locked**
 
-⏰ Please wait 7 days from the date your balance was credited.
+🛡️ In accordance with our 7-day security policy, withdrawals remain locked until your active investment cycle is fully completed.
 
-✅ After the 7-day period, your withdrawal will be unlocked, and you can withdraw your funds normally. 💸
+⏳ **Time Remaining:** 
+• `{days_left} Days and {hours_left} Hours`
 
-✨ Thank you for choosing our platform!"""
+Thank you for your patience and cooperation."""
         bot.send_message(message.chat.id, lock_msg, parse_mode="Markdown")
         return
 
@@ -912,10 +914,10 @@ Your balance will be updated automatically once the admin approves your transact
     conn.close()
 
     update_balance(target_user_id, amount)
-    
     add_notification(
         target_user_id,
-        f"🎉 Your deposit of ${amount} USDT has been approved and added to your balance!",
+        f"🎉 Your deposit of ${amount} USDT has been approved and added to your"
+        " balance!",
         "SUCCESS",
     )
 
@@ -925,7 +927,7 @@ Your balance will be updated automatically once the admin approves your transact
         text=call.message.text + f"\n\n✅ **STATUS:** `APPROVED BY ADMIN`",
         parse_mode="Markdown",
     )
-    bot.answer_callback_query(call.id, "✅ Deposit Approved & Balance Updated!")
+    bot.answer_callback_query(call.id, "✅ Deposit Approved Successfully!")
 
     user_success_msg = f"""🎉 **Deposit Approved Successfully!**
 
