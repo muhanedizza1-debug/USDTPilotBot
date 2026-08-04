@@ -107,11 +107,13 @@ def get_main_reply_keyboard():
   btn_referral = KeyboardButton("🎁 Referral")
   btn_terms = KeyboardButton("📜 Terms")
   btn_support = KeyboardButton("🛠️ Support")
+  btn_back = KeyboardButton("🔙 Back")
 
   markup.add(btn_profile, btn_deposit)
   markup.add(btn_investment, btn_withdraw)
   markup.add(btn_history, btn_referral)
   markup.add(btn_terms, btn_support)
+  markup.add(btn_back)
   return markup
 
 
@@ -376,6 +378,7 @@ def generate_history_text(user_id):
         "🎁 Referral",
         "📜 Terms",
         "🛠️ Support",
+        "🔙 Back",
     ]
 )
 def handle_reply_menu(message):
@@ -502,9 +505,12 @@ By using USDTPilotBot, you agree to abide by these rules and conditions."""
   elif text == "🛠️ Support":
     bot.send_message(
         message.chat.id,
-        "🛠️ **Support**\n\nFor any issues or questions, contact admin.",
+        "🛠️ **Support**\n\nFor any issues or questions, contact admin. @USDTPilotBotsupport12",
         parse_mode="Markdown",
     )
+
+  elif text == "🔙 Back":
+    send_profile_card(message.chat.id, user_id, name)
 
 
 @bot.message_handler(commands=["withdraw"])
