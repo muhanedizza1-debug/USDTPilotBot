@@ -913,11 +913,12 @@ Your balance will be updated automatically once the admin approves your transact
     conn.commit()
     conn.close()
 
+    # Diiwaanka si uu balance-ka u kordho si automatic ah marka la ansixiyo
     update_balance(target_user_id, amount)
+    
     add_notification(
         target_user_id,
-        f"🎉 Your deposit of ${amount} USDT has been approved and added to your"
-        " balance!",
+        f"🎉 Your deposit of ${amount} USDT has been approved and added to your balance!",
         "SUCCESS",
     )
 
@@ -927,7 +928,7 @@ Your balance will be updated automatically once the admin approves your transact
         text=call.message.text + f"\n\n✅ **STATUS:** `APPROVED BY ADMIN`",
         parse_mode="Markdown",
     )
-    bot.answer_callback_query(call.id, "✅ Deposit Approved Successfully!")
+    bot.answer_callback_query(call.id, "✅ Deposit Approved & Balance Updated!")
 
     user_success_msg = f"""🎉 **Deposit Approved Successfully!**
 
